@@ -89,29 +89,34 @@ function continueUpdateProcess(region) {
   if (region && region.trim()) {
     const newTarget = region.trim();
     addLogEntry_(`Перенаправление процесса на новую цель: "${newTarget}"...`, 'info');
-
-    let regionsToProcess;
-    let settlementsOverride = null;
     
-    const isKnownRegion = ALL_REGIONS_LIST.some(r => r.toLowerCase() === newTarget.toLowerCase());
-    if (isKnownRegion) {
-        regionsToProcess = [newTarget];
-    } else {
-        regionsToProcess = [`Поиск: "${newTarget}"`];
-        settlementsOverride = JSON.stringify([newTarget]);
-    }
+    const originalRegions = JSON.parse(props.regionsToProcess || '[]');
+    const startIndex = originalRegions.findIndex(r => r.toLowerCase() === newTarget.toLowerCase());
 
-    SCRIPT_PROPERTIES.setProperties({
-      'regionsToProcess': JSON.stringify(regionsToProcess),
-      'currentRegionIndex': '0',
-      'currentSettlementIndex': '0',
-      'settlementsForCurrentRegion': '[]'
-    });
-    
-    if (settlementsOverride) {
-      SCRIPT_PROPERTIES.setProperty('settlementsOverride', settlementsOverride);
-    } else {
+    if (startIndex !== -1) {
+      // Цель - это регион из текущего плана. Обрезаем список и начинаем с него.
+      const newRegionsToProcess = originalRegions.slice(startIndex);
+      SCRIPT_PROPERTIES.setProperties({
+        'regionsToProcess': JSON.stringify(newRegionsToProcess),
+        'currentRegionIndex': '0',
+        'currentSettlementIndex': '0',
+        'settlementsForCurrentRegion': '[]'
+      });
       SCRIPT_PROPERTIES.deleteProperty('settlementsOverride');
+      addLogEntry_(`Процесс продолжен с региона "${newTarget}" и далее по списку.`, 'success');
+    } else {
+      // Цель не найдена в списке регионов (вероятно, это город).
+      // Выполняем поиск только по этой цели, как при старте нового процесса.
+      addLogEntry_(`Регион "${newTarget}" не найден в плане. Будет выполнен отдельный поиск только по этой цели.`, 'warning');
+      const regionsToProcess = [`Поиск: "${newTarget}"`];
+      const settlementsOverride = JSON.stringify([newTarget]);
+      SCRIPT_PROPERTIES.setProperties({
+        'regionsToProcess': JSON.stringify(regionsToProcess),
+        'currentRegionIndex': '0',
+        'currentSettlementIndex': '0',
+        'settlementsForCurrentRegion': '[]'
+      });
+      SCRIPT_PROPERTIES.setProperty('settlementsOverride', settlementsOverride);
     }
   }
 
