@@ -55,7 +55,7 @@
     #emergencyStopButton { background: var(--grok-warning); width: 100%; font-size: 14px; }
     #emergencyStopButton:hover:not(:disabled) { background: #fbbf24; }
     .grok-status { margin-top: 16px; background: var(--grok-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--grok-border); }
-    #statusMessage { font-size: 14px; color: var(--grok-text-muted); text-align: center; margin-bottom: 12px; font-weight: 500; min-height: 21px; }
+    #statusMessage { font-size: 14px; color: var(--grok-text-muted); text-align: center; margin-bottom: 12px; font-weight: 500; min-height: 21px; word-break: break-all; }
     .grok-progress { height: 10px; background: var(--grok-border); border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
     #progressBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--grok-primary), var(--grok-primary-hover)); border-radius: 999px; transition: width 0.4s ease; }
     .grok-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; text-align: center; }
@@ -100,7 +100,7 @@
         </div>
         <div class="grok-field">
           <label for="searchQuery">Что искать?</label>
-          <input type="text" id="searchQuery" value="ветеринарные клиники и зоомагазины" disabled title="Поиск зафиксирован на ветклиниках и зоомагазинах в текущей версии">
+          <input type="text" id="searchQuery" value="ветеринарные клиники и зоомагазины">
         </div>
       </div>
     </details>
@@ -282,20 +282,28 @@
       ui.stopBtn.style.display = 'none';
 
       const isProcessActive = state === 'loading' || state === 'paused';
-      ui.logArea.style.display = isProcessActive ? 'block' : 'none';
-      ui.regionInput.disabled = isProcessActive;
+      if (isProcessActive) {
+        ui.logArea.style.display = 'block';
+      }
+      
+      ui.searchQueryInput.disabled = isProcessActive;
 
       if (state === 'loading') {
         ui.stopBtn.style.display = 'block';
         ui.stopBtn.disabled = canceling;
+        ui.regionInput.disabled = true;
         if (canceling) ui.statusMsg.textContent = 'Отмена...';
       } else if (state === 'paused') {
         ui.startBtn.style.display = 'block';
         ui.continueBtn.style.display = 'block';
         ui.startBtn.textContent = 'Начать заново';
+        ui.regionInput.disabled = false;
+        ui.regionInput.placeholder = "Введите регион для перехода или оставьте пустым";
       } else { // idle
         ui.startBtn.style.display = 'block';
         ui.startBtn.textContent = 'Запустить обновление';
+        ui.regionInput.disabled = false;
+        ui.regionInput.placeholder = "Оставьте пустым для всей РФ";
       }
     }
 

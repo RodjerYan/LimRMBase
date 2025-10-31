@@ -1,24 +1,22 @@
 // ===================================================================================
-// Code.gs – Серверная логика (Apps Script)
-// Версия: 14.1 – Исправлено "Продолжить", повышена стабильность OSM
+// Code.gs – Серверная логика
+// Версия: 20.0 – Финальная защита от спама и пустых координат
 // ===================================================================================
 
 // --- КОНФИГУРАЦИЯ ---
 const SHEET_ID = '13HkruBN9a_Y5xF8nUGpoyo3N7nJxiTW3PPgqw8FsApI';
 const SHEET_NAME = 'Base';
 const DASHBOARD_SHEET_NAME = 'Сводка';
-const ALL_REGIONS_LIST = ["Москва","Московская область","Санкт-Петербург","Ленинградская область","Республика Адыгея","Республика Алтай","Республика Башкортостан","Республика Бурятия","Республика Дагестан","Республика Ингушетия","Кабардино-Балкарская Республика","Республика Калмыкия","Карачаево-Черкесская Республика","Республика Карелия","Республика Коми","Республика Крым","Республика Марий Эл","Республика Мордовия","Республика Саха (Якутия)","Республика Северная Осетия - Алания","Республика Татарстан","Республика Тыва","Удмуртская Республика","Республика Хакасия","Чеченская Республика","Чувашская Республика","Алтайский край","Забайкальский край","Камчатский край","Краснодарский край","Красноярский край","Пермский край","Приморский край","Ставропольский край","Хабаровский край","Амурская область","Архангельская область","Астраханская область","Белгородская область","Брянская область","Владимирская область","Волгоградская область","Вологодская область","Воронежская область","Ивановская область","Иркутская область","Калининградская область","Калужская область","Кемеровская область","Кировская область","Костромская область","Курганская область","Курская область","Липецкая область","Магаданская область","Мурманская область","Нижегородская область","Новгородская область","Новосибирская область","Омская область","Оренбургская область","Орловская область","Пензенская область","Псковская область","Ростовская область","Рязанская область","Самарская область","Саратовская область","Сахалинская область","Свердловская область","Смоленская область","Тамбовская область","Тверская область","Томская область","Тульская область","Тюменская область","Ульяновская область","Челябинская область","Ярославская область","Севастополь","Еврейская автономная область","Ненецкий автономный округ","Ханты-Мансийский автономный округ - Югра","Чукотский автономный округ","Ямало-Ненецкий автономный округ"];
-const CACHE_EXPIRATION_SECONDS = 86400;
+const ALL_REGIONS_LIST = ["Москва", "Московская область", "Санкт-Петербург", "Ленинградская область", "Республика Адыгея", "Республика Алтай", "Республика Башкортостан", "Республика Бурятия", "Республика Дагестан", "Республика Ингушетия", "Кабардино-Балкарская Республика", "Республика Калмыкия", "Карачаево-Черкесская Республика", "Республика Карелия", "Республика Коми", "Республика Крым", "Республика Марий Эл", "Республика Мордовия", "Республика Саха (Якутия)", "Республика Северная Осетия - Алания", "Республика Татарстан", "Республика Тыва", "Удмуртская Республика", "Республика Хакасия", "Чеченская Республика", "Чувашская Республика", "Алтайский край", "Забайкальский край", "Камчатский край", "Краснодарский край", "Красноярский край", "Пермский край", "Приморский край", "Ставропольский край", "Хабаровский край", "Амурская область", "Архангельская область", "Астраханская область", "Белгородская область", "Брянская область", "Владимирская область", "Волгоградская область", "Вологодская область", "Воронежская область", "Ивановская область", "Иркутская область", "Калининградская область", "Калужская область", "Кемеровская область", "Кировская область", "Костромская область", "Курганская область", "Курская область", "Липецкая область", "Магаданская область", "Мурманская область", "Нижегородская область", "Новгородская область", "Новосибирская область", "Омская область", "Оренбургская область", "Орловская область", "Пензенская область", "Псковская область", "Ростовская область", "Рязанская область", "Самарская область", "Саратовская область", "Сахалинская область", "Свердловская область", "Смоленская область", "Тамбовская область", "Тверская область", "Томская область", "Тульская область", "Тюменская область", "Ульяновская область", "Челябинская область", "Ярославская область", "Севастополь", "Еврейская автономная область", "Ненецкий автономный округ", "Ханты-Мансийский автономный округ - Югра", "Чукотский автономный округ", "Ямало-Ненецкий автономный округ"];
+const CACHE_EXPIRATION_SECONDS = 86400; // 24 часа
 const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
 const USER_PROPERTIES = PropertiesService.getUserProperties();
 const SCRIPT_CACHE = CacheService.getScriptCache();
 const SCHEDULED_TRIGGER_HANDLER = 'runScheduledFullUpdate';
-const OSM_CACHE_EXPIRATION = 86400;
+const OSM_CACHE_EXPIRATION = 86400; // 24 часа
 
 // ===================================================================================
-// === ГЛАВНЫЕ ФУНКЦИИ ИНТЕРФЕЙСА ===
-// ===================================================================================
-
+// === ГЛАВНАЯ ФУНКЦИЯ ДЛЯ WEB-ИНТЕРФЕЙСА ===
 function doGet() {
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
@@ -26,15 +24,10 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function getSearchHistory() {
-  return USER_PROPERTIES.getProperties();
-}
-
-// === УПРАВЛЕНИЕ ПРОЦЕССОМ ===
+// ===================================================================================
+// === ФУНКЦИИ УПРАВЛЕНИЯ ПРОЦЕССОМ ===
 function startUpdateProcess(region, searchQuery) {
   if (getUpdateStatus().isUpdating) return { status: 'error', message: 'Процесс обновления уже запущен.' };
-  
-  USER_PROPERTIES.setProperties({ 'lastRegion': region || '', 'lastQuery': searchQuery || '' });
   
   clearProcessProperties_();
   addLogEntry_('Инициализация нового процесса...', 'info');
@@ -49,7 +42,14 @@ function startUpdateProcess(region, searchQuery) {
     'startTime': now, 'isFullUpdate': isFullUpdate.toString(),
     'currentRegionIndex': '0', 'currentSettlementIndex': '0', 'settlementsForCurrentRegion': '[]',
     'totalSettlementsProcessed': '0', 'lastHeartbeat': now, 'consecutiveErrors': '0',
-    'totalNew': '0', 'totalUpdated': '0', 'totalClosed': '0', 'lastSpeedCheck': now, 'citiesPerMinute': '0'
+    'totalNew': '0', 'totalUpdated': '0', 'totalClosed': '0',
+    'lastSpeedCheck': now, 'citiesPerMinute': '0', 'lastApiCallTimestamp': '0'
+  });
+
+  // Сохраняем историю поиска для пользователя
+  USER_PROPERTIES.setProperties({
+    'lastRegion': region,
+    'lastQuery': searchQuery
   });
 
   deleteProcessTriggers_();
@@ -57,41 +57,40 @@ function startUpdateProcess(region, searchQuery) {
   return { status: 'success', message: 'Процесс запущен.' };
 }
 
-function continueUpdateProcess(startRegion) {
+function continueUpdateProcess(region) {
   if (getUpdateStatus().isUpdating) return { status: 'error', message: 'Процесс обновления уже запущен.' };
   const props = SCRIPT_PROPERTIES.getProperties();
   if (!props.currentRegionIndex || props.finalSummary) return { status: 'error', message: 'Нет сохраненного состояния для продолжения.' };
 
-  const fullRegionsList = ALL_REGIONS_LIST;
-  let targetRegionIndex = parseInt(props.currentRegionIndex || '0');
-  let targetSettlementIndex = parseInt(props.currentSettlementIndex || '0');
-  let settlements = props.settlementsForCurrentRegion || '[]';
+  const fullRegionsList = JSON.parse(props.regionsToProcess || JSON.stringify(ALL_REGIONS_LIST));
+  let targetRegionIndex = parseInt(props.currentRegionIndex, 10);
+  let targetSettlementIndex = parseInt(props.currentSettlementIndex, 10);
 
-  // Если указан новый регион для старта, переключаемся на него и сбрасываем прогресс по городам
-  if (startRegion && startRegion.trim()) {
-    const regionName = startRegion.trim().toLowerCase();
-    let idx = fullRegionsList.findIndex(r => r.toLowerCase() === regionName); // Сначала точное совпадение
-    if (idx === -1) idx = fullRegionsList.findIndex(r => r.toLowerCase().includes(regionName)); // Потом частичное
-
-    if (idx !== -1) {
-      targetRegionIndex = idx;
-      targetSettlementIndex = 0; // Сброс для нового региона
-      settlements = '[]';         // Сброс для нового региона
-      addLogEntry_(`Продолжение с нового региона: "${fullRegionsList[idx]}"`, 'info');
+  if (region && region.trim()) {
+    const newRegion = region.trim();
+    addLogEntry_(`Поиск нового региона для продолжения: "${newRegion}"...`, 'info');
+    const foundIndex = fullRegionsList.findIndex(r => r.toLowerCase().includes(newRegion.toLowerCase()));
+    
+    if (foundIndex !== -1) {
+      targetRegionIndex = foundIndex;
+      targetSettlementIndex = 0; // Начинаем с начала нового региона
+      SCRIPT_PROPERTIES.setProperties({
+        'settlementsForCurrentRegion': '[]',
+        'currentSettlementIndex': '0'
+      });
+      addLogEntry_(`Продолжение с нового региона: "${fullRegionsList[targetRegionIndex]}"`, 'success');
     } else {
-      addLogEntry_(`Регион "${startRegion}" не найден. Продолжаем с последней сохраненной точки.`, 'warning');
+      addLogEntry_(`Регион "${newRegion}" не найден. Продолжаем с прежнего места.`, 'warning');
     }
-  } else {
-    addLogEntry_('Продолжение с последней сохраненной точки...', 'info');
   }
 
   SCRIPT_PROPERTIES.setProperties({
-    'isUpdating': 'true', 'regionsToProcess': JSON.stringify(fullRegionsList),
+    'isUpdating': 'true',
     'currentRegionIndex': targetRegionIndex.toString(),
     'currentSettlementIndex': targetSettlementIndex.toString(),
-    'settlementsForCurrentRegion': settlements,
     'consecutiveErrors': '0'
   });
+
   SCRIPT_PROPERTIES.deleteProperty('cancelRequested');
   SCRIPT_PROPERTIES.setProperty('lastHeartbeat', new Date().getTime().toString());
 
@@ -114,7 +113,6 @@ function stopAllProcesses() {
 
 // ===================================================================================
 // === МЕНЕДЖЕР ПРОЦЕССА ===
-// ===================================================================================
 function mainProcessManager() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(60000)) { createContinuationTrigger_('mainProcessManager', 5000); return; }
@@ -138,9 +136,12 @@ function mainProcessManager() {
     let settlementIndex = parseInt(props.currentSettlementIndex || '0');
     let settlements = JSON.parse(props.settlementsForCurrentRegion || '[]');
 
-    updateSpeedStats_(props, settlementIndex);
+    updateProgressMessage_(regions, regionIndex, settlementIndex, settlements.length, props);
 
     if (settlementIndex >= settlements.length) {
+      if (regionIndex > 0) { // Логируем завершение предыдущего региона
+         addLogEntry_(`✅ Регион "${regions[regionIndex-1]}" полностью обработан.`, 'success');
+      }
       if (regionIndex >= regions.length) {
         if (props.isFullUpdate === 'true') finalizeSmartUpdate_();
         resetState_('Обновление успешно завершено.', parseInt(props.totalSettlementsProcessed || '0'), parseInt(props.totalObjectsFoundOverall || '0'));
@@ -165,17 +166,15 @@ function mainProcessManager() {
         'settlementsForCurrentRegion': JSON.stringify(newSettlements),
         'currentSettlementIndex': '0'
       });
-      addLogEntry_(`Список НП для "${currentRegion}" получен. Начинаем обработку...`, 'info');
-      updateProgressMessage_(regions, regionIndex, 0, newSettlements.length, props);
+      addLogEntry_(`Список НП для "${currentRegion}" получен (${newSettlements.length} шт). Начинаем обработку...`, 'info');
       createContinuationTrigger_('mainProcessManager', 1000);
       return;
     }
 
     const settlementName = settlements[settlementIndex];
     const regionName = regions[regionIndex];
-    updateProgressMessage_(regions, regionIndex, settlementIndex, settlements.length, props, settlementName);
-
-    const result = searchByOSM_(settlementName, props.searchQuery, regionName);
+    
+    const result = searchByOSM_(settlementName, regionName);
     
     let newCnt = 0, updCnt = 0, closedCnt = 0;
     if (result && result.status === 'success' && result.data && result.data.length > 0) {
@@ -187,8 +186,6 @@ function mainProcessManager() {
       } catch (e) {
         addLogEntry_(`ОШИБКА ЗАПИСИ в "${settlementName}": ${e.message}`, 'error');
       }
-    } else if (result.status === 'error'){
-        addLogEntry_(`→ ${settlementName}: Ошибка поиска - ${result.message}`, 'warning');
     } else {
       addLogEntry_(`→ ${settlementName}: ничего не найдено`, 'info');
     }
@@ -197,7 +194,9 @@ function mainProcessManager() {
     const totalUpd = parseInt(props.totalUpdated || '0') + updCnt;
     const totalClosed = parseInt(props.totalClosed || '0') + closedCnt;
     SCRIPT_PROPERTIES.setProperties({
-      'totalNew': totalNew.toString(), 'totalUpdated': totalUpd.toString(), 'totalClosed': totalClosed.toString()
+      'totalNew': totalNew.toString(),
+      'totalUpdated': totalUpd.toString(),
+      'totalClosed': totalClosed.toString()
     });
 
     SCRIPT_PROPERTIES.setProperty('currentSettlementIndex', (settlementIndex + 1).toString());
@@ -207,180 +206,239 @@ function mainProcessManager() {
       SCRIPT_PROPERTIES.setProperty('currentRegionIndex', (regionIndex + 1).toString());
     }
     SCRIPT_PROPERTIES.setProperty('consecutiveErrors', '0');
-    createContinuationTrigger_('mainProcessManager', 2000);
+    createContinuationTrigger_('mainProcessManager', 3000);
 
   } catch (e) {
-    addLogEntry_(`КРИТИЧЕСКАЯ ОШИБКА: ${e.message}\n${e.stack}`, 'error');
+    addLogEntry_(`КРИТИЧЕСКАЯ ОШИБОКА: ${e.message}\n${e.stack}`, 'error');
     const errors = parseInt(SCRIPT_PROPERTIES.getProperty('consecutiveErrors') || '0') + 1;
     SCRIPT_PROPERTIES.setProperty('consecutiveErrors', errors.toString());
     if (errors >= 3) {
-      try { 
-        const adminEmail = SCRIPT_PROPERTIES.getProperty('ADMIN_EMAIL') || Session.getEffectiveUser().getEmail();
-        GmailApp.sendEmail(adminEmail, 'Критическая ошибка в скрипте обновления базы', e.stack); 
-      } catch {}
+      try { GmailApp.sendEmail(Session.getEffectiveUser().getEmail(), 'Критическая ошибка в скрипте обновления базы', e.stack); } catch {}
     }
     SCRIPT_PROPERTIES.setProperty('isUpdating', 'false');
     deleteProcessTriggers_();
   } finally { lock.releaseLock(); }
 }
 
-// ===================================================================================
-// === ЛОГИКА ПОИСКА (ТОЛЬКО OSM) ===
-// ===================================================================================
-function searchByOSM_(settlementName, searchQuery, regionContext) {
-  const cacheKey = `osm_revgeo_v2_${settlementName}_${searchQuery.replace(/\s/g, '_')}`;
-  const cached = SCRIPT_CACHE.get(cacheKey);
-  if (cached) {
-    addLogEntry_(`OSM кэш (с адресами) для "${settlementName}" использован.`, 'info');
-    return JSON.parse(cached);
+// === ПОДРОБНЫЙ ПРОГРЕСС ===========================================================
+function updateProgressMessage_(regions, ri, si, totalSett, props, currentSettlement = '') {
+  const regionProg = `${ri + 1}/${regions.length}`;
+  const cityProg = totalSett > 0 ? `${si + 1}/${totalSett}` : '0/0';
+  const processedCities = parseInt(props.totalSettlementsProcessed || '0') + si;
+
+  // Расчет скорости
+  const now = Date.now();
+  const lastCheck = parseInt(props.lastSpeedCheck || now);
+  let speed = props.citiesPerMinute || '0';
+  if (now - lastCheck > 20000) { // Обновляем скорость каждые 20 секунд
+    const elapsedMin = (now - parseInt(props.startTime)) / 60000;
+    speed = elapsedMin > 1 ? (processedCities / elapsedMin).toFixed(1) : '0';
+    SCRIPT_PROPERTIES.setProperty('citiesPerMinute', speed);
+    SCRIPT_PROPERTIES.setProperty('lastSpeedCheck', now.toString());
   }
+  
+  const regionName = regions[ri] || '';
+  const settlementName = totalSett > 0 ? settlements[si] || '' : '';
+  const msg = `Регион: [${regionProg}] ${regionName} | Город: (${cityProg}) ${settlementName} | Всего: ${processedCities} | Скорость: ${speed} НП/мин`;
+  SCRIPT_PROPERTIES.setProperty('progressMessage', msg);
+}
+
+// ===================================================================================
+// === OSM ПОИСК И ГЕОКОДИРОВАНИЕ ===
+function searchByOSM_(settlementName, regionContext) {
+  const cacheKey = `osm_v19_${settlementName}`;
+  const cached = SCRIPT_CACHE.get(cacheKey);
+  if (cached) { addLogEntry_(`КЭШ OSM для "${settlementName}"`, 'info'); return JSON.parse(cached); }
 
   addLogEntry_(`Поиск OSM для "${settlementName}"`, 'info');
   
-  const overpassQuery = `
-    [out:json][timeout:180];
-    area[name="${settlementName}"]->.searchArea;
-    (
-      node["amenity"="veterinary"](area.searchArea);
-      way["amenity"="veterinary"](area.searchArea);
-      relation["amenity"="veterinary"](area.searchArea);
-      node["shop"~"pet|pet_supply"](area.searchArea);
-      way["shop"~"pet|pet_supply"](area.searchArea);
-      relation["shop"~"pet|pet_supply"](area.searchArea);
-    );
-    out body center geom;
-  `;
+  const query = `[out:json][timeout:180]; area[name="${settlementName}"]->.a; ( node["amenity"="veterinary"](area.a); way["amenity"="veterinary"](area.a); relation["amenity"="veterinary"](area.a); node["shop"~"pet|pet_supply"](area.a); way["shop"~"pet|pet_supply"](area.a); relation["shop"~"pet|pet_supply"](area.a); ); out body center geom;`;
+  const options = { method: 'post', payload: 'data=' + encodeURIComponent(query), muteHttpExceptions: true };
   
-  const options = { 'method': 'post', 'payload': 'data=' + encodeURIComponent(overpassQuery), 'muteHttpExceptions': true };
-  
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const response = UrlFetchApp.fetch('https://overpass-api.de/api/interpreter', options);
-      if (response.getResponseCode() !== 200) throw new Error(`Overpass API вернул код ${response.getResponseCode()}`);
-      
-      const data = JSON.parse(response.getContentText());
-      if (!data.elements || data.elements.length === 0) {
-        return { status: 'success', data: [] };
-      }
-      
-      const clientsData = [];
-      for (const el of data.elements.slice(0, 50)) {
-        const tags = el.tags || {};
-        const lat = el.lat || el.center?.lat;
-        const lon = el.lon || el.center?.lon;
-        
-        let address = tags['addr:full'] || (tags['addr:street'] ? `${tags['addr:street']}, ${tags['addr:housenumber'] || ''}` : '');
-        
-        if (!address && lat && lon) {
-          address = getAddressFromCoords_(lat, lon, settlementName);
-        }
-
-        const isVet = tags.amenity === 'veterinary';
-        const category = isVet ? 'ветеринарная клиника' : 'зоомагазин';
-
-        clientsData.push({
-          'Наименование': tags.name || `${category} #${el.id}`,
-          'Адрес': address ? `${settlementName}, ${address}`.replace(/, $/, '') : settlementName,
-          'Категория': category,
-          'Контакты': tags.phone || tags['contact:phone'] || tags.website || 'Не указано',
-          'Субъект': regionContext
-        });
-      }
-      
-      const result = { status: 'success', data: clientsData };
-      SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
-      return result;
-
-    } catch (e) {
-      addLogEntry_(`OSM ошибка (попытка ${attempt}/3): ${e.message}.`, 'warning');
-      if (attempt < 3) Utilities.sleep(30000);
-      else {
-        addLogEntry_(`OSM недоступен для "${settlementName}" после 3 попыток.`, 'error');
-        return { status: 'error', message: `OSM недоступен для "${settlementName}"` };
-      }
-    }
+  let response;
+  try {
+    response = UrlFetchApp.fetch('https://overpass-api.de/api/interpreter', options);
+    if (response.getResponseCode() !== 200) throw new Error(`Overpass API вернул код ${response.getResponseCode()}`);
+  } catch (e) {
+    addLogEntry_(`OSM Overpass ошибка: ${e.message}`, 'error');
+    return {status: 'error', message: 'OSM API недоступен'};
   }
+
+  const data = JSON.parse(response.getContentText());
+  if (!data.elements || data.elements.length === 0) return {status: 'success', data: []};
+  
+  const items = data.elements.slice(0, 50); // Ограничение для стабильности
+  addLogEntry_(`Найдено ${data.elements.length} объектов, обрабатываем первые ${items.length} для стабильности.`, 'info');
+
+  const clientsData = items.map(el => {
+    const tags = el.tags || {};
+    const lat = el.lat || el.center?.lat;
+    const lon = el.lon || el.center?.lon;
+    
+    let address = '';
+    // 1. Пытаемся собрать адрес из тегов
+    if (tags['addr:street']) {
+      address = `${tags['addr:city'] || settlementName}, ${tags['addr:street'] || ''} ${tags['addr:housenumber'] || ''}`;
+    }
+    
+    // 2. Если тегов нет, обращаемся к геокодеру
+    if (!address && lat && lon) {
+      address = getAddressFromCoords_(lat, lon, settlementName);
+    } else if (!address) {
+      address = `${settlementName} (адрес не определен)`;
+    }
+    
+    // Формируем финальную строку адреса
+    const coordStr = (lat && lon) ? `(коорд: ${lat.toFixed(7)}, ${lon.toFixed(7)})` : `(коорд: не найдены)`;
+    const finalAddress = `${coordStr} ${address}`.trim();
+
+    return {
+      'Наименование': tags.name || tags.brand || `${tags.amenity || tags.shop} (id:${el.id})`,
+      'Адрес': finalAddress.replace(/, ,/g, ',').replace(/,$/, '').trim(),
+      'Категория': tags.amenity === 'veterinary' ? 'Ветеринарная клиника' : 'Зоомагазин',
+      'Контакты': tags.phone || tags['contact:phone'] || tags.website || 'Не указано',
+      'Субъект': regionContext
+    };
+  });
+  
+  const result = {status: 'success', data: clientsData};
+  SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
+  return result;
 }
 
 function getAddressFromCoords_(lat, lon, fallbackCity) {
-  const cacheKey = `revgeo_${lat.toFixed(4)}_${lon.toFixed(4)}`;
-  const cached = SCRIPT_CACHE.get(cacheKey);
-  if (cached) return cached;
-  
-  try {
-    Utilities.sleep(1100); // Nominatim rate limit
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ru`;
-    const response = UrlFetchApp.fetch(url, { 'muteHttpExceptions': true, 'headers': {'User-Agent': 'AppsScript-Client-OKB/1.0'} });
-    if (response.getResponseCode() !== 200) throw new Error(`Nominatim: ${response.getResponseCode()}`);
-    
-    const data = JSON.parse(response.getContentText());
-    const addr = data.address;
-    const addressString = [addr.road, addr.house_number].filter(Boolean).join(', ');
+    const geoCacheKey = `geo_v19_${lat}_${lon}`;
+    const cached = SCRIPT_CACHE.get(geoCacheKey);
+    if (cached) return cached;
 
-    if (addressString) {
-      SCRIPT_CACHE.put(cacheKey, addressString, 86400 * 7); // Cache for a week
-      return addressString;
+    const services = [
+        { name: 'Nominatim', url: `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}` },
+        { name: 'BigDataCloud', url: `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ru` },
+        { name: 'GeocodeXYZ', url: `https://geocode.xyz/${lat},${lon}?json=1` }
+    ];
+
+    for (const service of services) {
+        ensureApiRateLimit_(); // Глобальный ограничитель скорости
+        try {
+            const response = UrlFetchApp.fetch(service.url, {
+                muteHttpExceptions: true,
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+            });
+
+            if (response.getResponseCode() === 200) {
+                const contentText = response.getContentText();
+                let data;
+                try {
+                  data = JSON.parse(contentText);
+                } catch(e) {
+                  // Если ответ - не JSON, это спам или ошибка. Игнорируем.
+                  addLogEntry_(`Геокодер (${service.name}) вернул не-JSON ответ, пропускаем.`, 'warning');
+                  continue; 
+                }
+
+                let addressParts = {};
+                if (service.name === 'Nominatim' && data.address) {
+                    addressParts.city = data.address.city || data.address.town || data.address.village;
+                    addressParts.road = data.address.road;
+                    addressParts.house_number = data.address.house_number;
+                    addressParts.postcode = data.address.postcode;
+                } else if (service.name === 'BigDataCloud') {
+                    addressParts.city = data.city;
+                    addressParts.road = data.localityInfo?.administrative?.[2]?.name;
+                    addressParts.postcode = data.postcode;
+                } else if (service.name === 'GeocodeXYZ' && data.staddress) {
+                    addressParts.city = data.city;
+                    addressParts.road = data.staddress;
+                    addressParts.house_number = data.stnumber;
+                    addressParts.postcode = data.postal;
+                }
+                
+                if (addressParts.city || addressParts.road) {
+                    const fullAddress = [addressParts.city, addressParts.road, addressParts.house_number].filter(Boolean).join(', ');
+                    const finalAddress = `${fullAddress} индекс - ${addressParts.postcode || '?'}`.trim();
+                    SCRIPT_CACHE.put(geoCacheKey, finalAddress, OSM_CACHE_EXPIRATION * 30);
+                    return finalAddress;
+                }
+            } else {
+                addLogEntry_(`Геокодер (${service.name}) ошибка: API вернул код ${response.getResponseCode()}`, 'warning');
+            }
+        } catch (e) {
+            addLogEntry_(`Геокодер (${service.name}) сетевая ошибка: ${e.message}`, 'warning');
+        }
     }
-  } catch (e) {
-    addLogEntry_(`Ошибка геокодирования: ${e.message}`, 'warning');
-  }
-  return ''; // Return empty if fail, main function will handle fallback
+    return `${fallbackCity} (адрес не определен)`;
 }
 
 // ===================================================================================
-// === РАБОТА С ТАБЛИЦЕЙ ===
-// ===================================================================================
+// === РАБОТА С ТАБЛИЦЕЙ ============================================================
 function smartUpdateSheet_(sheet, newClients, settlementName) {
   if (!sheet || !newClients || newClients.length === 0) return {new: 0, updated: 0, closed: 0};
 
   const lastRow = sheet.getLastRow();
-  const startRow = 2;
-  const numRows = lastRow > 1 ? lastRow - 1 : 0;
-  const existing = numRows > 0 ? sheet.getRange(startRow, 1, numRows, 9).getValues() : [];
-
-  const map = new Map();
-  existing.forEach((r, i) => {
-    const city = r[2] ? r[2].toString().toLowerCase().trim() : '';
-    const name = r[4] ? r[4].toString().toLowerCase().trim() : '';
+  const existingData = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 9).getValues() : [];
+  
+  const existingMap = new Map();
+  existingData.forEach((row, index) => {
+    const city = (row[2] || '').toString().toLowerCase().trim();
+    const name = (row[4] || '').toString().toLowerCase().trim();
     if (city === settlementName.toLowerCase().trim()) {
-      map.set(`${name}|${city}`, { row: i + startRow });
+      existingMap.set(`${name}|${city}`, { row: index + 2, data: row });
     }
   });
 
-  let newCnt = 0, updCnt = 0;
-  const toAdd = [];
+  let newCount = 0, updatedCount = 0;
+  const toAdd = [], toUpdate = new Map();
 
   newClients.forEach(c => {
     const name = (c['Наименование'] || '').trim();
     const key = `${name.toLowerCase()}|${settlementName.toLowerCase().trim()}`;
-    const ex = map.get(key);
+    const existing = existingMap.get(key);
 
     const row = [
-      'Россия', c['Субъект'], settlementName, c['Категория'], name,
-      c['Адрес'], c['Контакты'], new Date(), 'Актуально'
+      'Россия', c['Субъект'] || '', settlementName, c['Категория'] || '',
+      name, c['Адрес'] || '', c['Контакты'] || '', new Date(), 'Актуально'
     ];
 
-    if (ex) {
-      sheet.getRange(ex.row, 1, 1, 9).setValues([row]);
-      map.delete(key);
-      updCnt++;
+    if (existing) {
+      if (JSON.stringify(existing.data.slice(0, 7)) !== JSON.stringify(row.slice(0, 7))) {
+        toUpdate.set(existing.row, row);
+        updatedCount++;
+      }
+      existingMap.delete(key);
     } else {
       toAdd.push(row);
-      newCnt++;
+      newCount++;
     }
   });
 
-  const closedCnt = map.size;
-  map.forEach(v => sheet.getRange(v.row, 9, 1, 1).setValue('Вероятно, закрыта'));
+  const closedCount = existingMap.size;
+  const rangesToUpdate = [], valuesToUpdate = [];
+  
+  // Обновляем существующие
+  toUpdate.forEach((value, key) => {
+    rangesToUpdate.push(sheet.getRange(key, 1, 1, 9));
+    valuesToUpdate.push(value);
+  });
 
+  // Помечаем закрытые
+  existingMap.forEach(value => {
+    rangesToUpdate.push(sheet.getRange(value.row, 9, 1, 1));
+    valuesToUpdate.push(['Вероятно, закрыта']);
+  });
+
+  if (rangesToUpdate.length > 0) {
+    sheet.getRangeList(rangesToUpdate.map(r => r.getA1Notation())).setValues(valuesToUpdate);
+  }
+
+  // Добавляем новые
   if (toAdd.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, 9).setValues(toAdd);
   }
 
-  const total = parseInt(SCRIPT_PROPERTIES.getProperty('totalObjectsFoundOverall') || '0') + newCnt;
+  const total = parseInt(SCRIPT_PROPERTIES.getProperty('totalObjectsFoundOverall') || '0') + newCount;
   SCRIPT_PROPERTIES.setProperty('totalObjectsFoundOverall', total.toString());
 
-  return {new: newCnt, updated: updCnt, closed: closedCnt};
+  return {new: newCount, updated: updatedCount, closed: closedCount};
 }
 
 function prepareForSmartUpdate_(sheet, scopeType, name) {
@@ -391,13 +449,15 @@ function prepareForSmartUpdate_(sheet, scopeType, name) {
   const statusData = statusRange.getValues();
 
   if (scopeType === 'full') {
-    for (let i = 0; i < statusData.length; i++) statusData[i][0] = 'Ожидает проверки';
+    for (let i = 0; i < statusData.length; i++) {
+      if (statusData[i][0] === 'Актуально') statusData[i][0] = 'Ожидает проверки';
+    }
   } else {
     const colIndex = scopeType === 'city' ? 3 : 2;
     const scopeData = sheet.getRange(2, colIndex, lastRow - 1, 1).getValues();
     const nameLower = name.toLowerCase();
     for (let i = 0; i < scopeData.length; i++) {
-      if (scopeData[i][0] && scopeData[i][0].toString().toLowerCase() === nameLower) {
+      if (scopeData[i][0] && scopeData[i][0].toString().toLowerCase() === nameLower && statusData[i][0] === 'Актуально') {
         statusData[i][0] = 'Ожидает проверки';
       }
     }
@@ -425,72 +485,42 @@ function finalizeSmartUpdate_() {
   }
 }
 
-
 // ===================================================================================
-// === УТИЛИТЫ И ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-// ===================================================================================
-
-function updateSpeedStats_(props, settlementIndex) {
-    const now = Date.now();
-    const lastCheck = parseInt(props.lastSpeedCheck || now);
-    if (now - lastCheck > 20000) { // Update every 20 seconds
-      const elapsedMin = (now - parseInt(props.startTime)) / 60000;
-      const processed = parseInt(props.totalSettlementsProcessed || '0') + settlementIndex;
-      const speed = elapsedMin > 1 ? (processed / elapsedMin).toFixed(1) : '0';
-      SCRIPT_PROPERTIES.setProperty('citiesPerMinute', speed);
-      SCRIPT_PROPERTIES.setProperty('lastSpeedCheck', now.toString());
-    }
-}
-
-function updateProgressMessage_(regions, ri, si, totalSett, props, currentSettlement = '') {
-  const regionProg = `${ri + 1}/${regions.length}`;
-  const cityProg = totalSett > 0 ? `${si + 1}/${totalSett}` : '0/0';
-  const msg = `Регион: ${regions[ri]} (${regionProg}) | Город: ${currentSettlement} (${cityProg})`;
-  SCRIPT_PROPERTIES.setProperty('progressMessage', msg);
-}
-
+// === УТИЛИТЫ ===
 function getSettlementsForRegion_(regionName) {
   const regionType = detectRegionType_(regionName);
   if (regionType === 'city') return [regionName];
 
-  const cacheKey = `settlements_v5_${regionName.replace(/\s/g, '_')}`;
+  const cacheKey = `settlements_v19_${regionName.replace(/\s/g, '_')}`;
   const cached = SCRIPT_CACHE.get(cacheKey);
   if (cached) return JSON.parse(cached);
 
   addLogEntry_(`Запрос списка городов для "${regionName}" к OpenStreetMap...`);
-  const overpassQuery = `[out:json][timeout:300]; area["ISO3166-2"~"^RU-"][name="${regionName}"]->.searchArea; ( node["place"~"city|town"](area.searchArea); ); out;`;
-  const options = { 'method': 'post', 'payload': 'data=' + encodeURIComponent(overpassQuery), 'muteHttpExceptions': true, 'headers': {'User-Agent': 'AppsScript-Client-OKB/1.0'} };
   
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      const overpassQuery = `[out:json][timeout:300]; area["ISO3166-2"~"^RU-"][name="${regionName}"]->.searchArea; ( node["place"~"city|town"](area.searchArea); ); out;`;
+      const options = {method: 'post', payload: 'data=' + encodeURIComponent(overpassQuery), muteHttpExceptions: true };
       const response = UrlFetchApp.fetch("https://overpass-api.de/api/interpreter", options);
-      const responseCode = response.getResponseCode();
-      if (responseCode === 200) {
-        const data = JSON.parse(response.getContentText());
-        if (!data.elements) return [];
-        
-        const settlementNames = Array.from(new Set(data.elements.map(el => el.tags?.name).filter(Boolean)));
-        if (settlementNames.length > 0) {
-          SCRIPT_CACHE.put(cacheKey, JSON.stringify(settlementNames), CACHE_EXPIRATION_SECONDS);
-          addLogEntry_(`Найдено ${settlementNames.length} НП.`, 'info');
-        }
-        return settlementNames;
+      if (response.getResponseCode() !== 200) {
+        throw new Error(`API OSM вернул ошибку ${response.getResponseCode()}`);
       }
-      if (responseCode >= 500) { // 500, 502, 504, etc.
-        throw new Error(`API OSM вернул ошибку ${responseCode}`);
-      } else { // 4xx errors, etc. are final
-        throw new Error(`API OSM вернул необрабатываемую ошибку ${responseCode}`);
+      const data = JSON.parse(response.getContentText());
+      if (!data.elements) return [];
+      
+      const settlementNames = Array.from(new Set(data.elements.map(el => el.tags?.name).filter(Boolean)));
+      if (settlementNames.length > 0) {
+        SCRIPT_CACHE.put(cacheKey, JSON.stringify(settlementNames), CACHE_EXPIRATION_SECONDS);
       }
+      return settlementNames;
     } catch (e) {
-      if (attempt < 3 && e.message.includes('50')) { // Retry only on 5xx errors
-        addLogEntry_(`Ошибка получения НП (попытка ${attempt}/3): ${e.message}. Пауза ${20 * attempt} сек...`, 'warning');
-        Utilities.sleep(20000 * attempt);
-      } else {
-        throw e; // Re-throw after last attempt or for non-retryable errors
-      }
+      addLogEntry_(`Ошибка получения списка НП (попытка ${attempt}/3): ${e.message}`, 'warning');
+      if (attempt < 3) Utilities.sleep(30000 * attempt);
+      else throw e;
     }
   }
 }
+
 
 function detectRegionType_(name) {
   const regionKeywords = ['область', 'край', 'республика', 'автономный округ', 'ао', 'округ'];
@@ -500,6 +530,20 @@ function detectRegionType_(name) {
   return 'city';
 }
 
+function ensureApiRateLimit_() {
+  const lastCall = parseInt(SCRIPT_PROPERTIES.getProperty('lastApiCallTimestamp') || '0');
+  const now = Date.now();
+  const timeSinceLastCall = now - lastCall;
+  const delay = 2000; // 2 секунды - безопасная задержка
+  if (timeSinceLastCall < delay) {
+    Utilities.sleep(delay - timeSinceLastCall);
+  }
+  SCRIPT_PROPERTIES.setProperty('lastApiCallTimestamp', Date.now().toString());
+}
+
+
+// ===================================================================================
+// === СТАТУС, ЛОГИ, ТРИГГЕРЫ =========================================================
 function getUpdateStatus() {
   const props = SCRIPT_PROPERTIES.getProperties();
   let isUpdating = props.isUpdating === 'true';
@@ -507,11 +551,16 @@ function getUpdateStatus() {
   if (isUpdating) {
     const lastHeartbeat = parseInt(props.lastHeartbeat || '0');
     const now = Date.now();
+    
     if (now - lastHeartbeat > 1500000) { // 25 min
       isUpdating = false; 
       SCRIPT_PROPERTIES.setProperty('isUpdating', 'false');
+      
       const canBeContinued = props.currentRegionIndex && !props.finalSummary;
-      const message = canBeContinued ? "Пауза истекла (>25 мин), но состояние сохранено. Нажмите 'Продолжить'." : "Процесс не отвечал > 25 мин и был остановлен.";
+      const message = canBeContinued
+        ? "Пауза истекла (>25 мин), но состояние сохранено. Нажмите 'Продолжить'."
+        : "Процесс не отвечал > 25 мин и был остановлен.";
+      
       SCRIPT_PROPERTIES.setProperty('progressMessage', message);
       addLogEntry_(message, canBeContinued ? 'warning' : 'error');
       deleteProcessTriggers_();
@@ -525,10 +574,10 @@ function getUpdateStatus() {
   const si = parseInt(props.currentSettlementIndex || '0');
   const sett = JSON.parse(props.settlementsForCurrentRegion || '[]');
   let prog = 0;
-  if (regions.length > 0 && ri < regions.length) {
-    const regionsDone = ri;
-    const settlementsInCurrentRegionDone = sett.length > 0 ? si / sett.length : 1;
-    prog = ((regionsDone + settlementsInCurrentRegionDone) / regions.length) * 100;
+  if (regions.length > 0 && (isUpdating || canContinue)) {
+    const regionProgress = ri / regions.length;
+    const settlementProgressInRegion = sett.length > 0 ? si / sett.length : 0;
+    prog = (regionProgress + (settlementProgressInRegion / regions.length)) * 100;
   }
   
   return {
@@ -538,10 +587,16 @@ function getUpdateStatus() {
     liveLog: props.liveLog || '',
     finalSummary, totalProgress: prog,
     stats: {
-      new: props.totalNew || '0', updated: props.totalUpdated || '0',
-      closed: props.totalClosed || '0', speed: props.citiesPerMinute || '0'
+      new: props.totalNew || '0',
+      updated: props.totalUpdated || '0',
+      closed: props.totalClosed || '0',
+      speed: props.citiesPerMinute || '0'
     }
   };
+}
+
+function getSearchHistory() {
+  return USER_PROPERTIES.getProperties();
 }
 
 function addLogEntry_(txt, type = 'info') {
@@ -550,11 +605,13 @@ function addLogEntry_(txt, type = 'info') {
   const entry = `<p style="color:${colors[type]};margin:2px 0">[${time}] ${txt}</p>`;
   const cur = SCRIPT_PROPERTIES.getProperty('liveLog') || '';
   const lines = (cur + entry).split('</p>').filter(Boolean);
-  SCRIPT_PROPERTIES.setProperty('liveLog', lines.slice(-200).join('</p>') + '</p>');
+  const limited = lines.slice(-200).join('</p>') + '</p>';
+  SCRIPT_PROPERTIES.setProperty('liveLog', limited);
+  console.log(`[${time}] ${txt}`);
 }
 
 function clearProcessProperties_() {
-  const keys = ['isUpdating','totalObjectsFoundOverall','regionsToProcess','searchQuery','startTime','isFullUpdate','currentRegionIndex','currentSettlementIndex','settlementsForCurrentRegion','totalSettlementsProcessed','progressMessage','liveLog','finalSummary','cancelRequested','lastHeartbeat','consecutiveErrors','totalNew','totalUpdated','totalClosed','lastSpeedCheck','citiesPerMinute'];
+  const keys = ['isUpdating','totalObjectsFoundOverall','regionsToProcess','searchQuery','startTime','isFullUpdate','currentRegionIndex','currentSettlementIndex','settlementsForCurrentRegion','totalSettlementsProcessed','progressMessage','liveLog','finalSummary','cancelRequested','lastHeartbeat','consecutiveErrors','totalNew','totalUpdated','totalClosed','lastSpeedCheck','citiesPerMinute', 'lastApiCallTimestamp'];
   keys.forEach(k => SCRIPT_PROPERTIES.deleteProperty(k));
 }
 
@@ -571,7 +628,6 @@ function createContinuationTrigger_(fn, delay) {
 
 // ===================================================================================
 // === ДАШБОРД И ЗАВЕРШЕНИЕ ===
-// ===================================================================================
 function resetState_(finalMessage, citiesProcessed, totalObjectsFound) {
   const props = SCRIPT_PROPERTIES.getProperties();
   const startTime = parseInt(props.startTime, 10);
@@ -594,6 +650,8 @@ function resetState_(finalMessage, citiesProcessed, totalObjectsFound) {
   };
   SCRIPT_PROPERTIES.setProperties({'isUpdating': 'false', 'progressMessage': finalMessage, 'finalSummary': JSON.stringify(summary) });
   SCRIPT_PROPERTIES.deleteProperty('cancelRequested');
+  SCRIPT_PROPERTIES.deleteProperty('lastHeartbeat');
+  SCRIPT_PROPERTIES.deleteProperty('consecutiveErrors');
   deleteProcessTriggers_();
 }
 
@@ -620,14 +678,13 @@ function createDashboard_(sheet) {
 
 // ===================================================================================
 // === ПЛАНИРОВЩИК ===
-// ===================================================================================
 function runScheduledFullUpdate() {
   if (SCRIPT_PROPERTIES.getProperty('isUpdating') === 'true') {
     Logger.log('Автообновление пропущено, идет процесс.');
     return;
   }
   Logger.log('Запуск полного обновления по расписанию.');
-  startUpdateProcess('', SCRIPT_PROPERTIES.getProperty('searchQuery') || 'ветеринарные клиники и зоомагазины');
+  startUpdateProcess('', USER_PROPERTIES.getProperty('lastQuery') || 'ветеринарные клиники и зоомагазины');
 }
 
 function createScheduledTrigger(frequency) {
