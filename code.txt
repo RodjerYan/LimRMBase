@@ -1,13 +1,13 @@
 // ===================================================================================
 // Code.gs – Серверная логика
-// Версия: 20.0 – Финальная защита от спама и пустых координат
+// Версия: 22.0 – Интеллектуальное формирование адреса из тегов OSM
 // ===================================================================================
 
 // --- КОНФИГУРАЦИЯ ---
 const SHEET_ID = '13HkruBN9a_Y5xF8nUGpoyo3N7nJxiTW3PPgqw8FsApI';
 const SHEET_NAME = 'Base';
 const DASHBOARD_SHEET_NAME = 'Сводка';
-const ALL_REGIONS_LIST = ["Москва", "Московская область", "Санкт-Петербург", "Ленинградская область", "Республика Адыгея", "Республика Алтай", "Республика Башкортостан", "Республика Бурятия", "Республика Дагестан", "Республика Ингушетия", "Кабардино-Балкарская Республика", "Республика Калмыкия", "Карачаево-Черкесская Республика", "Республика Карелия", "Республика Коми", "Республика Крым", "Республика Марий Эл", "Республика Мордовия", "Республика Саха (Якутия)", "Республика Северная Осетия - Алания", "Республика Татарстан", "Республика Тыва", "Удмуртская Республика", "Республика Хакасия", "Чеченская Республика", "Чувашская Республика", "Алтайский край", "Забайкальский край", "Камчатский край", "Краснодарский край", "Красноярский край", "Пермский край", "Приморский край", "Ставропольский край", "Хабаровский край", "Амурская область", "Архангельская область", "Астраханская область", "Белгородская область", "Брянская область", "Владимирская область", "Волгоградская область", "Вологодская область", "Воронежская область", "Ивановская область", "Иркутская область", "Калининградская область", "Калужская область", "Кемеровская область", "Кировская область", "Костромская область", "Курганская область", "Курская область", "Липецкая область", "Магаданская область", "Мурманская область", "Нижегородская область", "Новгородская область", "Новосибирская область", "Омская область", "Оренбургская область", "Орловская область", "Пензенская область", "Псковская область", "Ростовская область", "Рязанская область", "Самарская область", "Саратовская область", "Сахалинская область", "Свердловская область", "Смоленская область", "Тамбовская область", "Тверская область", "Томская область", "Тульская область", "Тюменская область", "Ульяновская область", "Челябинская область", "Ярославская область", "Севастополь", "Еврейская автономная область", "Ненецкий автономный округ", "Ханты-Мансийский автономный округ - Югра", "Чукотский автономный округ", "Ямало-Ненецкий автономный округ"];
+const ALL_REGIONS_LIST = ["Москва", "Московская область", "Санкт-Петербург", "Ленинградская область", "Республика Адыгея", "Республика Алтай", "Республика Башкортостан", "Республика Бурятия", "Республика Дагестан", "Республика Ингушетия", "Кабардино-Балкарская Республика", "Республика Калмыкия", "Карачаево-Черкесская Республика", "Республика Карелия", "Республика Коми", "Республика Крым", "Республика Марий Эл", "Республика Мордовия", "Республика Саха (Якутия)", "Республика Северная Осетия - Алания", "Республика Татарстан", "Республика Тыва", "Удмуртская Республика", "Республика Хакасия", "Чеченская Республика", "Чувашская Республика", "Алтайский край", "Забайкальский край", "Камчатский край", "Краснодарский край", "Красноярский край", "Пермский край", "Приморский край", "Ставропольный край", "Хабаровский край", "Амурская область", "Архангельская область", "Астраханская область", "Белгородская область", "Брянская область", "Владимирская область", "Волгоградская область", "Вологодская область", "Воронежская область", "Ивановская область", "Иркутская область", "Калининградская область", "Калужская область", "Кемеровская область", "Кировская область", "Костромская область", "Курганская область", "Курская область", "Липецкая область", "Магаданская область", "Мурманская область", "Нижегородская область", "Новгородская область", "Новосибирская область", "Омская область", "Оренбургская область", "Орловская область", "Пензенская область", "Псковская область", "Ростовская область", "Рязанская область", "Самарская область", "Саратовская область", "Сахалинская область", "Свердловская область", "Смоленская область", "Тамбовская область", "Тверская область", "Томская область", "Тульская область", "Тюменская область", "Ульяновская область", "Челябинская область", "Ярославская область", "Севастополь", "Еврейская автономная область", "Ненецкий автономный округ", "Ханты-Мансийский автономный округ - Югра", "Чукотский автономный округ", "Ямало-Ненецкий автономный округ"];
 const CACHE_EXPIRATION_SECONDS = 86400; // 24 часа
 const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
 const USER_PROPERTIES = PropertiesService.getUserProperties();
@@ -43,7 +43,7 @@ function startUpdateProcess(region, searchQuery) {
     'currentRegionIndex': '0', 'currentSettlementIndex': '0', 'settlementsForCurrentRegion': '[]',
     'totalSettlementsProcessed': '0', 'lastHeartbeat': now, 'consecutiveErrors': '0',
     'totalNew': '0', 'totalUpdated': '0', 'totalClosed': '0',
-    'lastSpeedCheck': now, 'citiesPerMinute': '0', 'lastApiCallTimestamp': '0'
+    'lastSpeedCheck': now, 'citiesPerMinute': '0'
   });
 
   // Сохраняем историю поиска для пользователя
@@ -136,10 +136,10 @@ function mainProcessManager() {
     let settlementIndex = parseInt(props.currentSettlementIndex || '0');
     let settlements = JSON.parse(props.settlementsForCurrentRegion || '[]');
 
-    updateProgressMessage_(regions, regionIndex, settlementIndex, settlements.length, props);
+    updateProgressMessage_(regions, regionIndex, settlementIndex, settlements, props);
 
     if (settlementIndex >= settlements.length) {
-      if (regionIndex > 0) { // Логируем завершение предыдущего региона
+      if (regionIndex > 0 && settlements.length > 0) {
          addLogEntry_(`✅ Регион "${regions[regionIndex-1]}" полностью обработан.`, 'success');
       }
       if (regionIndex >= regions.length) {
@@ -195,8 +195,8 @@ function mainProcessManager() {
     const totalClosed = parseInt(props.totalClosed || '0') + closedCnt;
     SCRIPT_PROPERTIES.setProperties({
       'totalNew': totalNew.toString(),
-      'totalUpdated': totalUpd.toString(),
-      'totalClosed': totalClosed.toString()
+      'totalUpdated': updCnt.toString(),
+      'totalClosed': closedCnt.toString()
     });
 
     SCRIPT_PROPERTIES.setProperty('currentSettlementIndex', (settlementIndex + 1).toString());
@@ -221,7 +221,9 @@ function mainProcessManager() {
 }
 
 // === ПОДРОБНЫЙ ПРОГРЕСС ===========================================================
-function updateProgressMessage_(regions, ri, si, totalSett, props, currentSettlement = '') {
+function updateProgressMessage_(regions, ri, si, settlements, props) {
+  if (!regions || !settlements) return; // Defensive check
+  const totalSett = settlements.length;
   const regionProg = `${ri + 1}/${regions.length}`;
   const cityProg = totalSett > 0 ? `${si + 1}/${totalSett}` : '0/0';
   const processedCities = parseInt(props.totalSettlementsProcessed || '0') + si;
@@ -232,366 +234,344 @@ function updateProgressMessage_(regions, ri, si, totalSett, props, currentSettle
   let speed = props.citiesPerMinute || '0';
   if (now - lastCheck > 20000) { // Обновляем скорость каждые 20 секунд
     const elapsedMin = (now - parseInt(props.startTime)) / 60000;
-    speed = elapsedMin > 1 ? (processedCities / elapsedMin).toFixed(1) : '0';
-    SCRIPT_PROPERTIES.setProperty('citiesPerMinute', speed);
-    SCRIPT_PROPERTIES.setProperty('lastSpeedCheck', now.toString());
+    if (elapsedMin > 0.5) { // Начинаем считать после 30 секунд работы
+      speed = (processedCities / elapsedMin).toFixed(1);
+      SCRIPT_PROPERTIES.setProperties({ 'lastSpeedCheck': now.toString(), 'citiesPerMinute': speed });
+    }
   }
+
+  const regionName = regions[ri] || '...';
+  const settlName = settlements[si] || '...';
+
+  const progressMessage = `Регион: ${regionName} [${regionProg}] | НП: ${settlName} [${cityProg}]`;
   
-  const regionName = regions[ri] || '';
-  const settlementName = totalSett > 0 ? settlements[si] || '' : '';
-  const msg = `Регион: [${regionProg}] ${regionName} | Город: (${cityProg}) ${settlementName} | Всего: ${processedCities} | Скорость: ${speed} НП/мин`;
-  SCRIPT_PROPERTIES.setProperty('progressMessage', msg);
+  // Расчет общего прогресса
+  const totalRegions = regions.length;
+  const regionWeight = 1 / totalRegions;
+  const settlementProgress = totalSett > 0 ? si / totalSett : 1;
+  const totalProgress = ((ri + settlementProgress) * regionWeight) * 100;
+  
+  SCRIPT_PROPERTIES.setProperties({ 
+    'progressMessage': progressMessage,
+    'totalProgress': Math.floor(totalProgress).toString()
+  });
 }
 
 // ===================================================================================
-// === OSM ПОИСК И ГЕОКОДИРОВАНИЕ ===
-function searchByOSM_(settlementName, regionContext) {
-  const cacheKey = `osm_v19_${settlementName}`;
-  const cached = SCRIPT_CACHE.get(cacheKey);
-  if (cached) { addLogEntry_(`КЭШ OSM для "${settlementName}"`, 'info'); return JSON.parse(cached); }
-
+// === РАБОТА С OpenStreetMap ===
+function searchByOSM_(settlementName, regionName) {
   addLogEntry_(`Поиск OSM для "${settlementName}"`, 'info');
-  
-  const query = `[out:json][timeout:180]; area[name="${settlementName}"]->.a; ( node["amenity"="veterinary"](area.a); way["amenity"="veterinary"](area.a); relation["amenity"="veterinary"](area.a); node["shop"~"pet|pet_supply"](area.a); way["shop"~"pet|pet_supply"](area.a); relation["shop"~"pet|pet_supply"](area.a); ); out body center geom;`;
-  const options = { method: 'post', payload: 'data=' + encodeURIComponent(query), muteHttpExceptions: true };
-  
-  let response;
-  try {
-    response = UrlFetchApp.fetch('https://overpass-api.de/api/interpreter', options);
-    if (response.getResponseCode() !== 200) throw new Error(`Overpass API вернул код ${response.getResponseCode()}`);
-  } catch (e) {
-    addLogEntry_(`OSM Overpass ошибка: ${e.message}`, 'error');
-    return {status: 'error', message: 'OSM API недоступен'};
-  }
-
-  const data = JSON.parse(response.getContentText());
-  if (!data.elements || data.elements.length === 0) return {status: 'success', data: []};
-  
-  const items = data.elements.slice(0, 50); // Ограничение для стабильности
-  addLogEntry_(`Найдено ${data.elements.length} объектов, обрабатываем первые ${items.length} для стабильности.`, 'info');
-
-  const clientsData = items.map(el => {
-    const tags = el.tags || {};
-    const lat = el.lat || el.center?.lat;
-    const lon = el.lon || el.center?.lon;
-    
-    let address = '';
-    // 1. Пытаемся собрать адрес из тегов
-    if (tags['addr:street']) {
-      address = `${tags['addr:city'] || settlementName}, ${tags['addr:street'] || ''} ${tags['addr:housenumber'] || ''}`;
-    }
-    
-    // 2. Если тегов нет, обращаемся к геокодеру
-    if (!address && lat && lon) {
-      address = getAddressFromCoords_(lat, lon, settlementName);
-    } else if (!address) {
-      address = `${settlementName} (адрес не определен)`;
-    }
-    
-    // Формируем финальную строку адреса
-    const coordStr = (lat && lon) ? `(коорд: ${lat.toFixed(7)}, ${lon.toFixed(7)})` : `(коорд: не найдены)`;
-    const finalAddress = `${coordStr} ${address}`.trim();
-
-    return {
-      'Наименование': tags.name || tags.brand || `${tags.amenity || tags.shop} (id:${el.id})`,
-      'Адрес': finalAddress.replace(/, ,/g, ',').replace(/,$/, '').trim(),
-      'Категория': tags.amenity === 'veterinary' ? 'Ветеринарная клиника' : 'Зоомагазин',
-      'Контакты': tags.phone || tags['contact:phone'] || tags.website || 'Не указано',
-      'Субъект': regionContext
-    };
-  });
-  
-  const result = {status: 'success', data: clientsData};
-  SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
-  return result;
-}
-
-function getAddressFromCoords_(lat, lon, fallbackCity) {
-    const geoCacheKey = `geo_v19_${lat}_${lon}`;
-    const cached = SCRIPT_CACHE.get(geoCacheKey);
-    if (cached) return cached;
-
-    const services = [
-        { name: 'Nominatim', url: `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}` },
-        { name: 'BigDataCloud', url: `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ru` },
-        { name: 'GeocodeXYZ', url: `https://geocode.xyz/${lat},${lon}?json=1` }
-    ];
-
-    for (const service of services) {
-        ensureApiRateLimit_(); // Глобальный ограничитель скорости
-        try {
-            const response = UrlFetchApp.fetch(service.url, {
-                muteHttpExceptions: true,
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-            });
-
-            if (response.getResponseCode() === 200) {
-                const contentText = response.getContentText();
-                let data;
-                try {
-                  data = JSON.parse(contentText);
-                } catch(e) {
-                  // Если ответ - не JSON, это спам или ошибка. Игнорируем.
-                  addLogEntry_(`Геокодер (${service.name}) вернул не-JSON ответ, пропускаем.`, 'warning');
-                  continue; 
-                }
-
-                let addressParts = {};
-                if (service.name === 'Nominatim' && data.address) {
-                    addressParts.city = data.address.city || data.address.town || data.address.village;
-                    addressParts.road = data.address.road;
-                    addressParts.house_number = data.address.house_number;
-                    addressParts.postcode = data.address.postcode;
-                } else if (service.name === 'BigDataCloud') {
-                    addressParts.city = data.city;
-                    addressParts.road = data.localityInfo?.administrative?.[2]?.name;
-                    addressParts.postcode = data.postcode;
-                } else if (service.name === 'GeocodeXYZ' && data.staddress) {
-                    addressParts.city = data.city;
-                    addressParts.road = data.staddress;
-                    addressParts.house_number = data.stnumber;
-                    addressParts.postcode = data.postal;
-                }
-                
-                if (addressParts.city || addressParts.road) {
-                    const fullAddress = [addressParts.city, addressParts.road, addressParts.house_number].filter(Boolean).join(', ');
-                    const finalAddress = `${fullAddress} индекс - ${addressParts.postcode || '?'}`.trim();
-                    SCRIPT_CACHE.put(geoCacheKey, finalAddress, OSM_CACHE_EXPIRATION * 30);
-                    return finalAddress;
-                }
-            } else {
-                addLogEntry_(`Геокодер (${service.name}) ошибка: API вернул код ${response.getResponseCode()}`, 'warning');
-            }
-        } catch (e) {
-            addLogEntry_(`Геокодер (${service.name}) сетевая ошибка: ${e.message}`, 'warning');
-        }
-    }
-    return `${fallbackCity} (адрес не определен)`;
-}
-
-// ===================================================================================
-// === РАБОТА С ТАБЛИЦЕЙ ============================================================
-function smartUpdateSheet_(sheet, newClients, settlementName) {
-  if (!sheet || !newClients || newClients.length === 0) return {new: 0, updated: 0, closed: 0};
-
-  const lastRow = sheet.getLastRow();
-  const existingData = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 9).getValues() : [];
-  
-  const existingMap = new Map();
-  existingData.forEach((row, index) => {
-    const city = (row[2] || '').toString().toLowerCase().trim();
-    const name = (row[4] || '').toString().toLowerCase().trim();
-    if (city === settlementName.toLowerCase().trim()) {
-      existingMap.set(`${name}|${city}`, { row: index + 2, data: row });
-    }
-  });
-
-  let newCount = 0, updatedCount = 0;
-  const toAdd = [], toUpdate = new Map();
-
-  newClients.forEach(c => {
-    const name = (c['Наименование'] || '').trim();
-    const key = `${name.toLowerCase()}|${settlementName.toLowerCase().trim()}`;
-    const existing = existingMap.get(key);
-
-    const row = [
-      'Россия', c['Субъект'] || '', settlementName, c['Категория'] || '',
-      name, c['Адрес'] || '', c['Контакты'] || '', new Date(), 'Актуально'
-    ];
-
-    if (existing) {
-      if (JSON.stringify(existing.data.slice(0, 7)) !== JSON.stringify(row.slice(0, 7))) {
-        toUpdate.set(existing.row, row);
-        updatedCount++;
-      }
-      existingMap.delete(key);
-    } else {
-      toAdd.push(row);
-      newCount++;
-    }
-  });
-
-  const closedCount = existingMap.size;
-  const rangesToUpdate = [], valuesToUpdate = [];
-  
-  // Обновляем существующие
-  toUpdate.forEach((value, key) => {
-    rangesToUpdate.push(sheet.getRange(key, 1, 1, 9));
-    valuesToUpdate.push(value);
-  });
-
-  // Помечаем закрытые
-  existingMap.forEach(value => {
-    rangesToUpdate.push(sheet.getRange(value.row, 9, 1, 1));
-    valuesToUpdate.push(['Вероятно, закрыта']);
-  });
-
-  if (rangesToUpdate.length > 0) {
-    sheet.getRangeList(rangesToUpdate.map(r => r.getA1Notation())).setValues(valuesToUpdate);
-  }
-
-  // Добавляем новые
-  if (toAdd.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, 9).setValues(toAdd);
-  }
-
-  const total = parseInt(SCRIPT_PROPERTIES.getProperty('totalObjectsFoundOverall') || '0') + newCount;
-  SCRIPT_PROPERTIES.setProperty('totalObjectsFoundOverall', total.toString());
-
-  return {new: newCount, updated: updatedCount, closed: closedCount};
-}
-
-function prepareForSmartUpdate_(sheet, scopeType, name) {
-  addLogEntry_(`Подготовка к обновлению для "${name || 'всей базы'}"...`, 'info');
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-  const statusRange = sheet.getRange(2, 9, lastRow - 1, 1);
-  const statusData = statusRange.getValues();
-
-  if (scopeType === 'full') {
-    for (let i = 0; i < statusData.length; i++) {
-      if (statusData[i][0] === 'Актуально') statusData[i][0] = 'Ожидает проверки';
-    }
-  } else {
-    const colIndex = scopeType === 'city' ? 3 : 2;
-    const scopeData = sheet.getRange(2, colIndex, lastRow - 1, 1).getValues();
-    const nameLower = name.toLowerCase();
-    for (let i = 0; i < scopeData.length; i++) {
-      if (scopeData[i][0] && scopeData[i][0].toString().toLowerCase() === nameLower && statusData[i][0] === 'Актуально') {
-        statusData[i][0] = 'Ожидает проверки';
-      }
-    }
-  }
-  statusRange.setValues(statusData);
-}
-
-function finalizeSmartUpdate_() {
-  addLogEntry_(`Завершение обновления...`, 'info');
-  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-  const range = sheet.getRange(2, 9, lastRow - 1, 1);
-  const statuses = range.getValues();
-  let closedCount = 0;
-  for (let i = 0; i < statuses.length; i++) {
-    if (statuses[i][0] === 'Ожидает проверки') {
-      statuses[i][0] = 'Вероятно, закрыта';
-      closedCount++;
-    }
-  }
-  if (closedCount > 0) {
-    range.setValues(statuses);
-    addLogEntry_(`Помечено как "Вероятно, закрыта": ${closedCount} объектов.`, 'info');
-  }
-}
-
-// ===================================================================================
-// === УТИЛИТЫ ===
-function getSettlementsForRegion_(regionName) {
-  const regionType = detectRegionType_(regionName);
-  if (regionType === 'city') return [regionName];
-
-  const cacheKey = `settlements_v19_${regionName.replace(/\s/g, '_')}`;
+  const cacheKey = `osm_${regionName}_${settlementName}_vet_pet_shops`; // Specific cache key for reliability
   const cached = SCRIPT_CACHE.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (cached) {
+    addLogEntry_('Данные OSM взяты из кэша.', 'info');
+    return JSON.parse(cached);
+  }
 
-  addLogEntry_(`Запрос списка городов для "${regionName}" к OpenStreetMap...`);
+  const overpassUrl = 'https://overpass-api.de/api/interpreter';
+  // Оптимизированный запрос: ищет границу НП (уточняя, что это город/посёлок),
+  // а затем ищет объекты только внутри этой границы.
+  const query = `
+    [out:json][timeout:180];
+    area["name"="${regionName}"]->.region;
+    area["name"="${settlementName}"]["place"~"city|town"](area.region)->.searchArea;
+    (
+      nwr["amenity"="veterinary"](area.searchArea);
+      nwr["shop"="pet"](area.searchArea);
+    );
+    out center;
+  `.trim();
+
+  const options = {
+    'method': 'post',
+    'contentType': 'application/x-www-form-urlencoded',
+    'payload': { 'data': query },
+    'muteHttpExceptions': true
+  };
   
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const overpassQuery = `[out:json][timeout:300]; area["ISO3166-2"~"^RU-"][name="${regionName}"]->.searchArea; ( node["place"~"city|town"](area.searchArea); ); out;`;
-      const options = {method: 'post', payload: 'data=' + encodeURIComponent(overpassQuery), muteHttpExceptions: true };
-      const response = UrlFetchApp.fetch("https://overpass-api.de/api/interpreter", options);
-      if (response.getResponseCode() !== 200) {
-        throw new Error(`API OSM вернул ошибку ${response.getResponseCode()}`);
+      const response = UrlFetchApp.fetch(overpassUrl, options);
+      const responseCode = response.getResponseCode();
+      if (responseCode === 200) {
+        const data = JSON.parse(response.getContentText());
+        let elements = data.elements;
+
+        const limit = 50;
+        if (elements.length > limit) {
+          addLogEntry_(`Найдено ${elements.length} объектов, обрабатываем первые ${limit} для стабильности.`, 'warning');
+          elements = elements.slice(0, limit);
+        }
+
+        const formattedData = elements.map(el => {
+          const tags = el.tags || {};
+          const coords = el.center ? { lat: el.center.lat, lon: el.center.lon } : { lat: el.lat, lon: el.lon };
+          return {
+            id: `osm-${el.id}`,
+            name: tags.name || 'Без названия',
+            address: buildAddressFromTags_(tags, coords),
+            phone: tags.phone || tags['contact:phone'] || '',
+            website: tags.website || tags['contact:website'] || '',
+            lat: coords.lat,
+            lon: coords.lon,
+            source: 'OSM',
+            city: settlementName
+          };
+        });
+        
+        const result = { status: 'success', data: formattedData };
+        SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
+        return result;
+
+      } else {
+        addLogEntry_(`Overpass ошибка (попытка ${attempt}/3): HTTP ${responseCode}`, 'error');
+        if (attempt < 3) Utilities.sleep(15000 * attempt);
       }
-      const data = JSON.parse(response.getContentText());
-      if (!data.elements) return [];
-      
-      const settlementNames = Array.from(new Set(data.elements.map(el => el.tags?.name).filter(Boolean)));
-      if (settlementNames.length > 0) {
-        SCRIPT_CACHE.put(cacheKey, JSON.stringify(settlementNames), CACHE_EXPIRATION_SECONDS);
-      }
-      return settlementNames;
     } catch (e) {
-      addLogEntry_(`Ошибка получения списка НП (попытка ${attempt}/3): ${e.message}`, 'warning');
-      if (attempt < 3) Utilities.sleep(30000 * attempt);
-      else throw e;
+      addLogEntry_(`Overpass ошибка сети (попытка ${attempt}/3): ${e.message}`, 'error');
+      if (attempt < 3) Utilities.sleep(15000 * attempt);
     }
   }
+  return { status: 'error', message: 'Не удалось получить данные от Overpass API после 3 попыток.' };
 }
 
-
-function detectRegionType_(name) {
-  const regionKeywords = ['область', 'край', 'республика', 'автономный округ', 'ао', 'округ'];
-  const lower = name.toLowerCase().trim();
-  if (name === "Москва" || name === "Санкт-Петербург" || name === "Севастополь") return 'city';
-  if (regionKeywords.some(k => lower.includes(k))) return 'region';
-  return 'city';
-}
-
-function ensureApiRateLimit_() {
-  const lastCall = parseInt(SCRIPT_PROPERTIES.getProperty('lastApiCallTimestamp') || '0');
-  const now = Date.now();
-  const timeSinceLastCall = now - lastCall;
-  const delay = 2000; // 2 секунды - безопасная задержка
-  if (timeSinceLastCall < delay) {
-    Utilities.sleep(delay - timeSinceLastCall);
-  }
-  SCRIPT_PROPERTIES.setProperty('lastApiCallTimestamp', Date.now().toString());
-}
-
-
-// ===================================================================================
-// === СТАТУС, ЛОГИ, ТРИГГЕРЫ =========================================================
-function getUpdateStatus() {
-  const props = SCRIPT_PROPERTIES.getProperties();
-  let isUpdating = props.isUpdating === 'true';
-
-  if (isUpdating) {
-    const lastHeartbeat = parseInt(props.lastHeartbeat || '0');
-    const now = Date.now();
-    
-    if (now - lastHeartbeat > 1500000) { // 25 min
-      isUpdating = false; 
-      SCRIPT_PROPERTIES.setProperty('isUpdating', 'false');
-      
-      const canBeContinued = props.currentRegionIndex && !props.finalSummary;
-      const message = canBeContinued
-        ? "Пауза истекла (>25 мин), но состояние сохранено. Нажмите 'Продолжить'."
-        : "Процесс не отвечал > 25 мин и был остановлен.";
-      
-      SCRIPT_PROPERTIES.setProperty('progressMessage', message);
-      addLogEntry_(message, canBeContinued ? 'warning' : 'error');
-      deleteProcessTriggers_();
-    }
-  }
-
-  const canContinue = !isUpdating && props.currentRegionIndex && !props.finalSummary;
-  const finalSummary = props.finalSummary ? JSON.parse(props.finalSummary) : null;
-  const regions = JSON.parse(props.regionsToProcess || '[]');
-  const ri = parseInt(props.currentRegionIndex || '0');
-  const si = parseInt(props.currentSettlementIndex || '0');
-  const sett = JSON.parse(props.settlementsForCurrentRegion || '[]');
-  let prog = 0;
-  if (regions.length > 0 && (isUpdating || canContinue)) {
-    const regionProgress = ri / regions.length;
-    const settlementProgressInRegion = sett.length > 0 ? si / sett.length : 0;
-    prog = (regionProgress + (settlementProgressInRegion / regions.length)) * 100;
+// === УЛУЧШЕННАЯ ФУНКЦИЯ ФОРМИРОВАНИЯ АДРЕСА ===
+function buildAddressFromTags_(tags, coords) {
+  const addressParts = [];
+  
+  // 1. Город/Населенный пункт
+  const city = tags['addr:city'] || tags['addr:place'] || tags['addr:settlement'];
+  if (city) addressParts.push(city);
+  
+  // 2. Улица
+  const street = tags['addr:street'];
+  if (street) addressParts.push(street);
+  
+  // 3. Номер дома
+  const houseNumber = tags['addr:housenumber'];
+  if (houseNumber) {
+    // Если есть улица, добавляем "д." или "стр." и т.д.
+    const prefix = street ? (houseNumber.match(/[а-яА-Я]/) ? '' : 'д. ') : '';
+    addressParts.push(`${prefix}${houseNumber}`);
   }
   
-  return {
-    isUpdating, canContinue,
-    progressMessage: props.progressMessage || 'Ожидание...',
-    cancelRequested: props.cancelRequested === 'true',
-    liveLog: props.liveLog || '',
-    finalSummary, totalProgress: prog,
-    stats: {
-      new: props.totalNew || '0',
-      updated: props.totalUpdated || '0',
-      closed: props.totalClosed || '0',
-      speed: props.citiesPerMinute || '0'
+  // Если удалось собрать хотя бы что-то, возвращаем собранный адрес
+  if (addressParts.length > 0) {
+    return addressParts.join(', ');
+  }
+  
+  // В противном случае, возвращаем координаты как запасной вариант
+  return `Координаты: ${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}`;
+}
+
+function getSettlementsForRegion_(region) {
+  const cacheKey = `settlements_${region}`;
+  const cached = SCRIPT_CACHE.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
+  addLogEntry_(`Запрос списка городов для "${region}" к OpenStreetMap...`, 'info');
+  const overpassUrl = 'https://overpass-api.de/api/interpreter';
+  const query = `
+    [out:json][timeout:60];
+    area["name"="${region}"]->.searchArea;
+    (
+      node["place"~"city|town"](area.searchArea);
+    );
+    out body;
+  `.trim();
+  
+  try {
+    const response = UrlFetchApp.fetch(overpassUrl, { method: 'post', payload: { 'data': query }, muteHttpExceptions: true });
+    if (response.getResponseCode() === 200) {
+      const data = JSON.parse(response.getContentText());
+      const settlements = [...new Set(data.elements.map(e => e.tags.name).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'ru'));
+      SCRIPT_CACHE.put(cacheKey, JSON.stringify(settlements), CACHE_EXPIRATION_SECONDS);
+      return settlements;
+    } else {
+      addLogEntry_(`Не удалось получить список НП для "${region}". Код: ${response.getResponseCode()}`, 'error');
+      return [];
     }
+  } catch (e) {
+    addLogEntry_(`Ошибка сети при получении списка НП для "${region}": ${e.message}`, 'error');
+    return [];
+  }
+}
+
+// ===================================================================================
+// === РАБОТА С GOOGLE ТАБЛИЦЕЙ (SMART UPDATE) ===
+
+function smartUpdateSheet_(sheet, newData, currentCity) {
+  if (!newData || newData.length === 0) return { new: 0, updated: 0, closed: 0 };
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const dataRange = sheet.getDataRange();
+  const allData = dataRange.getValues().slice(1);
+  const cityColIndex = headers.indexOf('Город');
+  const idColIndex = headers.indexOf('ID');
+
+  // Фильтруем данные только для текущего города, чтобы не сканировать всю таблицу каждый раз
+  const existingCityData = allData.filter(row => row[cityColIndex] === currentCity);
+  const existingIds = new Set(existingCityData.map(row => row[idColIndex]));
+
+  const toAdd = [];
+  const toUpdate = [];
+
+  newData.forEach(newItem => {
+    if (existingIds.has(newItem.id)) {
+      // Это обновление, но мы его пропускаем, так как smartUpdate обновит все сразу
+    } else {
+      toAdd.push([
+        newItem.id, newItem.name, newItem.address, newItem.phone, newItem.website,
+        newItem.lat, newItem.lon, newItem.source, new Date(), new Date(),
+        currentCity, 'active'
+      ]);
+    }
+  });
+
+  if (toAdd.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, toAdd[0].length).setValues(toAdd);
+  }
+
+  // Обновляем все записи для текущего города, которые были помечены для обновления
+  const cityRowsToUpdate = allData.reduce((acc, row, index) => {
+    if (row[cityColIndex] === currentCity && row[idColIndex].toString().startsWith('osm-') && row[headers.length-1] === 'marked_for_update') {
+      const newDataItem = newData.find(item => item.id === row[idColIndex]);
+      if (newDataItem) {
+        // [range, values]
+        acc.push([
+          `B${index + 2}:E${index + 2}`,
+          [newDataItem.name, newDataItem.address, newDataItem.phone, newDataItem.website]
+        ]);
+        acc.push([
+          `I${index + 2}:I${index + 2}`,
+          [[new Date()]] // Дата обновления
+        ]);
+         acc.push([
+          `L${index + 2}:L${index + 2}`,
+          [['active']] // Статус
+        ]);
+      }
+    }
+    return acc;
+  }, []);
+  
+  if(cityRowsToUpdate.length > 0) {
+    const ranges = cityRowsToUpdate.map(item => item[0]);
+    const values = cityRowsToUpdate.map(item => item[1]);
+    
+    // Используем batchUpdate для групповой записи
+    const requests = ranges.map((range, i) => ({
+      range: `${SHEET_NAME}!${range}`,
+      values: Array.isArray(values[i][0]) ? values[i] : [values[i]]
+    }));
+    
+    Sheets.Spreadsheets.Values.batchUpdate({ data: requests, valueInputOption: "USER_ENTERED" }, SHEET_ID);
+  }
+  
+  // Подсчитываем закрытые
+  const activeIdsInNewData = new Set(newData.map(item => item.id));
+  const closedCount = existingCityData.filter(row =>
+    row[idColIndex].toString().startsWith('osm-') &&
+    !activeIdsInNewData.has(row[idColIndex]) &&
+    row[headers.length-1] !== 'closed'
+  ).length;
+
+  return { new: toAdd.length, updated: cityRowsToUpdate.length / 3, closed: closedCount }; // Делим на 3, так как 3 записи на объект
+}
+
+function prepareForSmartUpdate_(sheet, type, region) {
+  addLogEntry_(`Подготовка к обновлению для "${region || 'всей базы'}"...`, 'info');
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const data = sheet.getDataRange().getValues().slice(1);
+  const sourceColIndex = headers.indexOf('Источник');
+  const statusColIndex = headers.indexOf('Статус');
+  const regionColIndex = headers.indexOf('Регион') > -1 ? headers.indexOf('Регион') : headers.indexOf('Город'); // Адаптация
+
+  const rangesToUpdate = [];
+  data.forEach((row, index) => {
+    const isOsmSource = row[sourceColIndex] === 'OSM';
+    const isActive = row[statusColIndex] === 'active';
+    let shouldMark = false;
+
+    if (type === 'full' && isOsmSource && isActive) {
+      shouldMark = true;
+    } else if (type === 'region' && isOsmSource && isActive && row[regionColIndex].includes(region)) {
+      shouldMark = true;
+    } else if (type === 'city' && isOsmSource && isActive && row[regionColIndex] === region) {
+      shouldMark = true;
+    }
+    
+    if (shouldMark) {
+      // +2 потому что index с 0, а строки в таблице с 1, и +1 заголовок
+      rangesToUpdate.push(`${SHEET_NAME}!L${index + 2}`);
+    }
+  });
+
+  if (rangesToUpdate.length > 0) {
+    const requests = rangesToUpdate.map(range => ({
+      range: range,
+      values: [['marked_for_update']]
+    }));
+    // Разбиваем на чанки по 500, чтобы не превысить лимиты API
+    for (let i = 0; i < requests.length; i += 500) {
+        const chunk = requests.slice(i, i + 500);
+        Sheets.Spreadsheets.Values.batchUpdate({ data: chunk, valueInputOption: "RAW" }, SHEET_ID);
+    }
+    addLogEntry_(`Помечено ${rangesToUpdate.length} записей для проверки.`, 'info');
+  } else {
+    addLogEntry_(`Нет активных записей OSM для проверки в "${region || 'базе'}".`, 'info');
+  }
+}
+
+function finalizeSmartUpdate_() {
+  addLogEntry_('Завершение "умного" обновления: закрытие устаревших записей...', 'info');
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const headers = data.shift();
+  const statusColIndex = headers.indexOf('Статус');
+  
+  const rangesToUpdate = [];
+  data.forEach((row, index) => {
+    if (row[statusColIndex] === 'marked_for_update') {
+      rangesToUpdate.push(`${SHEET_NAME}!L${index + 2}`);
+    }
+  });
+
+  if (rangesToUpdate.length > 0) {
+    const requests = rangesToUpdate.map(range => ({
+      range: range,
+      values: [['closed']]
+    }));
+    for (let i = 0; i < requests.length; i += 500) {
+      const chunk = requests.slice(i, i + 500);
+      Sheets.Spreadsheets.Values.batchUpdate({ data: chunk, valueInputOption: "RAW" }, SHEET_ID);
+    }
+    addLogEntry_(`${rangesToUpdate.length} устаревших записей было закрыто.`, 'success');
+  } else {
+    addLogEntry_('Не найдено устаревших записей для закрытия.', 'info');
+  }
+}
+
+// ===================================================================================
+// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+function getUpdateStatus() {
+  const props = SCRIPT_PROPERTIES.getProperties();
+  const logs = getLogEntries_();
+  const stats = {
+    new: props.totalNew || '0',
+    updated: props.totalUpdated || '0',
+    closed: props.totalClosed || '0',
+    speed: props.citiesPerMinute || '0'
+  };
+  return {
+    isUpdating: props.isUpdating === 'true',
+    canContinue: !!props.currentRegionIndex && props.isUpdating !== 'true' && !props.finalSummary,
+    cancelRequested: props.cancelRequested === 'true',
+    progressMessage: props.progressMessage || 'Ожидание...',
+    totalProgress: props.totalProgress || '0',
+    liveLog: logs,
+    finalSummary: props.finalSummary ? JSON.parse(props.finalSummary) : null,
+    stats: stats,
   };
 }
 
@@ -599,122 +579,132 @@ function getSearchHistory() {
   return USER_PROPERTIES.getProperties();
 }
 
-function addLogEntry_(txt, type = 'info') {
-  const colors = {info: '#94a3b8', success: '#22c55e', error: '#ef4444', warning: '#f59e0b'};
-  const time = new Date().toLocaleTimeString('ru-RU');
-  const entry = `<p style="color:${colors[type]};margin:2px 0">[${time}] ${txt}</p>`;
-  const cur = SCRIPT_PROPERTIES.getProperty('liveLog') || '';
-  const lines = (cur + entry).split('</p>').filter(Boolean);
-  const limited = lines.slice(-200).join('</p>') + '</p>';
-  SCRIPT_PROPERTIES.setProperty('liveLog', limited);
-  console.log(`[${time}] ${txt}`);
+function addLogEntry_(message, type) {
+  const timestamp = new Date().toLocaleTimeString('ru-RU');
+  const logEntry = `<p class="log-${type}">[${timestamp}] ${message}</p>`;
+  let logs = SCRIPT_PROPERTIES.getProperty('liveLog') || '';
+  const logLines = logs.split('</p>').filter(Boolean);
+  if (logLines.length > 100) {
+    logs = logLines.slice(logLines.length - 100).join('</p>') + '</p>';
+  }
+  SCRIPT_PROPERTIES.setProperty('liveLog', logs + logEntry);
+}
+
+function getLogEntries_() {
+  return SCRIPT_PROPERTIES.getProperty('liveLog') || '';
 }
 
 function clearProcessProperties_() {
-  const keys = ['isUpdating','totalObjectsFoundOverall','regionsToProcess','searchQuery','startTime','isFullUpdate','currentRegionIndex','currentSettlementIndex','settlementsForCurrentRegion','totalSettlementsProcessed','progressMessage','liveLog','finalSummary','cancelRequested','lastHeartbeat','consecutiveErrors','totalNew','totalUpdated','totalClosed','lastSpeedCheck','citiesPerMinute', 'lastApiCallTimestamp'];
-  keys.forEach(k => SCRIPT_PROPERTIES.deleteProperty(k));
+  const keys = SCRIPT_PROPERTIES.getKeys().filter(k => k !== 'scheduleFrequency');
+  if(keys.length > 0) SCRIPT_PROPERTIES.deleteProperties(keys);
 }
 
 function deleteProcessTriggers_() {
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'mainProcessManager') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === 'mainProcessManager') {
+      ScriptApp.deleteTrigger(t);
+    }
   });
 }
 
-function createContinuationTrigger_(fn, delay) {
+function createContinuationTrigger_(handler, delay) {
   deleteProcessTriggers_();
-  ScriptApp.newTrigger(fn).timeBased().after(delay).create();
+  ScriptApp.newTrigger(handler).timeBased().after(delay).create();
 }
 
-// ===================================================================================
-// === ДАШБОРД И ЗАВЕРШЕНИЕ ===
-function resetState_(finalMessage, citiesProcessed, totalObjectsFound) {
-  const props = SCRIPT_PROPERTIES.getProperties();
-  const startTime = parseInt(props.startTime, 10);
-  const durationStr = `${Math.floor((new Date().getTime() - startTime) / 60000)} мин`;
-  const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-  
-  try {
-    const sheet = spreadsheet.getSheetByName(SHEET_NAME);
-    createDashboard_(sheet);
-  } catch(e) {
-    addLogEntry_(`Не удалось создать дашборд: ${e.message}`, 'error');
-  }
-
-  const dashboardSheet = spreadsheet.getSheetByName(DASHBOARD_SHEET_NAME);
+function resetState_(finalMessage, cities, objects) {
+  deleteProcessTriggers_();
+  const startTime = parseInt(SCRIPT_PROPERTIES.getProperty('startTime') || Date.now());
+  const duration = ((Date.now() - startTime) / 60000).toFixed(1) + ' мин';
   const summary = {
-    message: finalMessage, duration: durationStr,
-    citiesProcessed, totalObjectsFound,
-    sheetUrl: spreadsheet.getUrl(),
-    dashboardUrl: dashboardSheet ? `${spreadsheet.getUrl()}#gid=${dashboardSheet.getSheetId()}` : spreadsheet.getUrl()
+    message: finalMessage, duration: duration, citiesProcessed: cities,
+    totalObjectsFound: objects,
+    sheetUrl: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit#gid=0`,
+    dashboardUrl: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit#gid=${SpreadsheetApp.openById(SHEET_ID).getSheetByName(DASHBOARD_SHEET_NAME).getSheetId()}`
   };
-  SCRIPT_PROPERTIES.setProperties({'isUpdating': 'false', 'progressMessage': finalMessage, 'finalSummary': JSON.stringify(summary) });
-  SCRIPT_PROPERTIES.deleteProperty('cancelRequested');
-  SCRIPT_PROPERTIES.deleteProperty('lastHeartbeat');
-  SCRIPT_PROPERTIES.deleteProperty('consecutiveErrors');
-  deleteProcessTriggers_();
-}
-
-function createDashboard_(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) return;
-  const spreadsheet = sheet.getParent();
-  let dashboardSheet = spreadsheet.getSheetByName(DASHBOARD_SHEET_NAME);
-  if (dashboardSheet) dashboardSheet.clear(); 
-  else dashboardSheet = spreadsheet.insertSheet(DASHBOARD_SHEET_NAME, 0); 
+  SCRIPT_PROPERTIES.setProperty('finalSummary', JSON.stringify(summary));
+  SCRIPT_PROPERTIES.setProperty('isUpdating', 'false');
+  addLogEntry_(`${finalMessage} Время выполнения: ${duration}.`, 'success');
   
-  dashboardSheet.setColumnWidths(1, 2, 300);
-  const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4);
-
-  const cityPivotTable = dashboardSheet.getRange('A1').createPivotTable(dataRange);
-  cityPivotTable.addRowGroup(3).setDisplayName("Город");
-  cityPivotTable.addPivotValue(3, SpreadsheetApp.PivotTableSummarizeFunction.COUNTA).setDisplayName('Количество объектов');
-
-  const categoryPivotTable = dashboardSheet.getRange('A30').createPivotTable(dataRange);
-  categoryPivotTable.addRowGroup(4).setDisplayName("Категория");
-  categoryPivotTable.addPivotValue(4, SpreadsheetApp.PivotTableSummarizeFunction.COUNTA).setDisplayName('Количество объектов');
-
-  SpreadsheetApp.flush();
+  // Обновляем дашборд
+  try { updateDashboard_(); } catch (e) { addLogEntry_(`Не удалось обновить дашборд: ${e.message}`, 'error');}
 }
 
-// ===================================================================================
+function detectRegionType_(regionName) {
+  if (regionName.toLowerCase().includes('область') || regionName.toLowerCase().includes('край') || regionName.toLowerCase().includes('республика')) {
+    return 'region';
+  }
+  return 'city';
+}
+
 // === ПЛАНИРОВЩИК ===
-function runScheduledFullUpdate() {
-  if (SCRIPT_PROPERTIES.getProperty('isUpdating') === 'true') {
-    Logger.log('Автообновление пропущено, идет процесс.');
-    return;
-  }
-  Logger.log('Запуск полного обновления по расписанию.');
-  startUpdateProcess('', USER_PROPERTIES.getProperty('lastQuery') || 'ветеринарные клиники и зоомагазины');
-}
-
 function createScheduledTrigger(frequency) {
-  deleteScheduledTrigger(); 
-  let triggerBuilder = ScriptApp.newTrigger(SCHEDULED_TRIGGER_HANDLER).timeBased();
-  if (frequency === 'weekly') {
-    triggerBuilder.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).inTimezone('Europe/Moscow').create();
-  } else if (frequency === 'monthly') {
-    triggerBuilder.onMonthDay(1).atHour(3).inTimezone('Europe/Moscow').create();
-  } else if (frequency === 'weekly-morning') {
-    triggerBuilder.onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(7).inTimezone('Europe/Moscow').create();
+  deleteScheduledTrigger();
+  let triggerBuilder;
+  switch (frequency) {
+    case 'weekly':
+      triggerBuilder = ScriptApp.newTrigger(SCHEDULED_TRIGGER_HANDLER).timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(2);
+      break;
+    case 'weekly-morning':
+      triggerBuilder = ScriptApp.newTrigger(SCHEDULED_TRIGGER_HANDLER).timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(7);
+      break;
+    case 'monthly':
+      triggerBuilder = ScriptApp.newTrigger(SCHEDULED_TRIGGER_HANDLER).timeBased().onMonthDay(1).atHour(2);
+      break;
+    default:
+      return { status: "Неверная частота" };
   }
+  triggerBuilder.create();
   SCRIPT_PROPERTIES.setProperty('scheduleFrequency', frequency);
   return getScheduledTriggerStatus();
 }
 
 function deleteScheduledTrigger() {
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === SCHEDULED_TRIGGER_HANDLER) {
-      ScriptApp.deleteTrigger(t);
-    }
+    if (t.getHandlerFunction() === SCHEDULED_TRIGGER_HANDLER) ScriptApp.deleteTrigger(t);
   });
   SCRIPT_PROPERTIES.deleteProperty('scheduleFrequency');
   return getScheduledTriggerStatus();
 }
 
 function getScheduledTriggerStatus() {
-  const freq = SCRIPT_PROPERTIES.getProperty('scheduleFrequency');
-  if (freq === 'weekly') return { status: 'Еженедельно (ночь ВС)' };
-  if (freq === 'monthly') return { status: 'Ежемесячно (1-го числа)' };
-  if (freq === 'weekly-morning') return { status: 'Еженедельно (ВС 07:00 МСК)' };
-  return { status: 'Отключено' }; 
+  const triggers = ScriptApp.getProjectTriggers();
+  const trigger = triggers.find(t => t.getHandlerFunction() === SCHEDULED_TRIGGER_HANDLER);
+  if (trigger) {
+    const freq = SCRIPT_PROPERTIES.getProperty('scheduleFrequency');
+    if (freq === 'weekly') return { status: "Еженедельно (ночь ВС)" };
+    if (freq === 'weekly-morning') return { status: "Еженедельно (ВС 07:00)" };
+    if (freq === 'monthly') return { status: "Ежемесячно (1-го числа)" };
+    return { status: "Запланировано (неизвестно)" };
+  }
+  return { status: "Отключено" };
+}
+
+function runScheduledFullUpdate() {
+  if (getUpdateStatus().isUpdating) {
+    console.log("Плановое обновление пропущено, т.к. уже идет другой процесс.");
+    return;
+  }
+  startUpdateProcess(null, SCRIPT_PROPERTIES.getProperty('searchQuery') || 'ветеринарные клиники и зоомагазины');
+}
+
+// === ДАШБОРД ===
+function updateDashboard_() {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(DASHBOARD_SHEET_NAME);
+    if (!sheet) return;
+
+    const props = SCRIPT_PROPERTIES.getProperties();
+    const lastUpdate = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+    const duration = ((Date.now() - parseInt(props.startTime, 10)) / 60000).toFixed(1) + ' мин';
+    
+    sheet.getRange('B2').setValue(lastUpdate);
+    sheet.getRange('B3').setValue(duration);
+    sheet.getRange('B4').setValue(parseInt(props.totalNew || 0, 10));
+    sheet.getRange('B5').setValue(parseInt(props.totalUpdated || 0, 10));
+    sheet.getRange('B6').setValue(parseInt(props.totalClosed || 0, 10));
+    sheet.getRange('B7').setValue(parseInt(props.totalSettlementsProcessed || 0, 10));
+    
+    // Принудительно обновляем формулы, которые могут зависеть от новых данных
+    SpreadsheetApp.flush();
 }
