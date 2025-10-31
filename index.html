@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Панель Управления Базой</title>
+  <style>
+    :root {
+      --grok-bg: #0a0e17; --grok-surface: #1e293b; --grok-primary: #6366f1;
+      --grok-primary-hover: #818cf8; --grok-success: #22c55e; --grok-warning: #f59e0b;
+      --grok-error: #ef4444; --grok-text: #e2e8f0; --grok-text-muted: #94a3b8;
+      --grok-border: #334155; --grok-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -4px rgba(0,0,0,0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--grok-bg); color: var(--grok-text); line-height: 1.5; padding: 20px; font-size: 16px;
+    }
+    .grok-container {
+      max-width: 720px; margin: 0 auto; background: var(--grok-surface);
+      border-radius: 16px; padding: 24px; border: 1px solid var(--grok-border); box-shadow: var(--grok-shadow);
+    }
+    .grok-header h1 { text-align: center; font-size: 24px; font-weight: 600; color: var(--grok-text); margin-bottom: 24px; }
+    .grok-section {
+      border: 1px solid var(--grok-border); border-radius: 12px; padding: 16px; margin-bottom: 20px;
+    }
+    .grok-section summary { cursor: pointer; font-weight: 600; color: var(--grok-primary-hover); font-size: 15px; user-select: none; }
+    .grok-section[open] summary { margin-bottom: 12px; }
+    .grok-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    .grok-field label { font-size: 14px; color: var(--grok-text-muted); margin-bottom: 6px; display: block; font-weight: 500; }
+    .grok-field input, .grok-field select {
+      width: 100%; background: var(--grok-bg); border: 1px solid var(--grok-border); color: var(--grok-text);
+      border-radius: 8px; padding: 10px 12px; font-size: 14px; transition: border 0.2s ease;
+    }
+    .grok-field input:focus, .grok-field select:focus { outline: none; border-color: var(--grok-primary); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+    .grok-select {
+      -webkit-appearance: none; -moz-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;
+    }
+    .grok-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+    .grok-btn {
+      flex: 1; min-width: 140px; padding: 12px 16px; font-size: 15px; font-weight: 600; border: none;
+      border-radius: 10px; cursor: pointer; transition: all 0.2s ease; color: white;
+    }
+    .grok-btn:active { transform: scale(0.98); }
+    .grok-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #startButton { background: var(--grok-primary); }
+    #startButton:hover:not(:disabled) { background: var(--grok-primary-hover); }
+    #continueButton { background: var(--grok-success); }
+    #continueButton:hover:not(:disabled) { background: #4ade80; }
+    #stopButton { background: var(--grok-error); }
+    #stopButton:hover:not(:disabled) { background: #f87171; }
+    #emergencyStopButton { background: var(--grok-warning); width: 100%; font-size: 14px; }
+    #emergencyStopButton:hover:not(:disabled) { background: #fbbf24; }
+    .grok-status { margin-top: 16px; background: var(--grok-bg); padding: 16px; border-radius: 12px; border: 1px solid var(--grok-border); }
+    #statusMessage { font-size: 14px; color: var(--grok-text-muted); text-align: center; margin-bottom: 12px; font-weight: 500; min-height: 21px; }
+    .grok-progress { height: 10px; background: var(--grok-border); border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
+    #progressBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--grok-primary), var(--grok-primary-hover)); border-radius: 999px; transition: width 0.4s ease; }
+    .grok-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; text-align: center; }
+    .stat-item > div:first-child { font-size: 12px; color: var(--grok-text-muted); }
+    .stat-item > div:last-child { font-size: 16px; font-weight: 600; }
+    #statNew { color: var(--grok-success); } #statUpdated { color: var(--grok-primary-hover); }
+    #statClosed { color: var(--grok-warning); } #statSpeed { color: var(--grok-text); }
+
+    #logArea {
+      margin-top: 16px; padding: 14px; background: #0a0e17; border: 1px solid var(--grok-border);
+      border-radius: 10px; max-height: 220px; overflow-y: auto; font-family: 'SF Mono', 'Courier New', monospace;
+      font-size: 13px; display: none;
+    }
+    #logArea p { margin: 2px 0; }
+    #resultsArea {
+      margin-top: 16px; padding: 16px; background: rgba(34, 197, 94, 0.1); border: 1px solid var(--grok-success);
+      border-radius: 10px; color: var(--grok-text); display: none;
+    }
+    #resultsArea h3 { color: var(--grok-success); }
+    #resultsArea a { color: var(--grok-primary-hover); text-decoration: none; }
+    #resultsArea a:hover { text-decoration: underline; }
+    .grok-flex { display: flex; align-items: center; gap: 10px; }
+    .grok-flex select { flex: 1; }
+    .grok-flex button { flex: 0.6; font-size: 14px; padding: 10px; }
+    @media (max-width: 600px) {
+      .grok-controls { flex-direction: column; }
+      .grok-btn { min-width: 100%; }
+      body { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grok-container">
+    <div class="grok-header"><h1>Панель Управления Базой</h1></div>
+
+    <details class="grok-section" open>
+      <summary>Настройки поиска</summary>
+      <div class="grok-grid">
+        <div class="grok-field">
+          <label for="regionInput">Регион или город</label>
+          <input type="text" id="regionInput" placeholder="Оставьте пустым для всей РФ">
+        </div>
+        <div class="grok-field">
+          <label for="searchQuery">Что искать?</label>
+          <input type="text" id="searchQuery" value="ветеринарные клиники и зоомагазины" disabled title="Поиск зафиксирован на ветклиниках и зоомагазинах в текущей версии">
+        </div>
+      </div>
+    </details>
+
+    <div class="grok-controls">
+      <button id="startButton" class="grok-btn">Запустить обновление</button>
+      <button id="continueButton" class="grok-btn" style="display: none;">Продолжить</button>
+      <button id="stopButton" class="grok-btn" style="display: none;">Остановить (Пауза)</button>
+    </div>
+    <button id="emergencyStopButton" class="grok-btn">Аварийная остановка (Сброс)</button>
+    
+    <div class="grok-status">
+      <div id="statusMessage">Нажмите "Запустить", чтобы начать.</div>
+      <div class="grok-progress"><div id="progressBar"></div></div>
+      <div class="grok-stats-grid">
+        <div class="stat-item"><div>Новые</div><div id="statNew">0</div></div>
+        <div class="stat-item"><div>Обновленные</div><div id="statUpdated">0</div></div>
+        <div class="stat-item"><div>Закрытые</div><div id="statClosed">0</div></div>
+        <div class="stat-item"><div>Скорость</div><div id="statSpeed">0 <span>НП/м</span></div></div>
+      </div>
+    </div>
+
+    <div id="logArea"></div>
+    <div id="resultsArea"></div>
+
+    <details class="grok-section" style="margin-top: 20px;">
+      <summary>Планировщик</summary>
+      <div class="grok-grid">
+        <div class="grok-field">
+          <label for="scheduleSelect">Автоматическое обновление</label>
+          <div class="grok-flex">
+            <select id="scheduleSelect" class="grok-select">
+              <option value="disabled">Отключено</option>
+              <option value="weekly">Еженедельно (ночь ВС)</option>
+              <option value="weekly-morning">Еженедельно (ВС 07:00)</option>
+              <option value="monthly">Ежемесячно (1-го)</option>
+            </select>
+            <button id="saveScheduleBtn" class="grok-btn">Сохранить</button>
+          </div>
+          <p style="font-size: 12px; color: var(--grok-text-muted); margin-top: 6px;" id="scheduleStatus">Загрузка...</p>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script>
+    const ui = {
+      startBtn: document.getElementById('startButton'),
+      continueBtn: document.getElementById('continueButton'),
+      stopBtn: document.getElementById('stopButton'),
+      emergencyBtn: document.getElementById('emergencyStopButton'),
+      statusMsg: document.getElementById('statusMessage'),
+      progressBar: document.getElementById('progressBar'),
+      logArea: document.getElementById('logArea'),
+      resultsArea: document.getElementById('resultsArea'),
+      regionInput: document.getElementById('regionInput'),
+      searchQueryInput: document.getElementById('searchQuery'),
+      scheduleSelect: document.getElementById('scheduleSelect'),
+      saveScheduleBtn: document.getElementById('saveScheduleBtn'),
+      scheduleStatus: document.getElementById('scheduleStatus'),
+      statNew: document.getElementById('statNew'),
+      statUpdated: document.getElementById('statUpdated'),
+      statClosed: document.getElementById('statClosed'),
+      statSpeed: document.getElementById('statSpeed'),
+    };
+
+    let isPolling = false;
+
+    function run(func, ...args) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          [func](...args);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      updateUI(await run('getUpdateStatus'));
+      updateScheduleUI(await run('getScheduledTriggerStatus'));
+      applySearchHistory(await run('getSearchHistory'));
+    });
+
+    ui.startBtn.addEventListener('click', () => {
+      if (ui.startBtn.textContent.includes('заново')) {
+        if (!confirm('Сбросить текущий прогресс и начать обновление с самого начала?')) return;
+      }
+      const region = ui.regionInput.value.trim();
+      const query = ui.searchQueryInput.value.trim();
+      ui.logArea.innerHTML = '';
+      ui.resultsArea.style.display = 'none';
+      setState('loading');
+      logMessage('Запуск нового процесса...', 'info');
+      run('startUpdateProcess', region, query).then(onStart).catch(onError);
+    });
+
+    ui.continueBtn.addEventListener('click', () => {
+      setState('loading');
+      const region = ui.regionInput.value.trim();
+      logMessage(region ? `Продолжение с региона "${region}"...` : 'Продолжение с сохраненной точки...', 'info');
+      run('continueUpdateProcess', region).then(onStart).catch(onError);
+    });
+
+    ui.stopBtn.addEventListener('click', () => {
+      ui.stopBtn.disabled = true;
+      logMessage('Отправлен запрос на остановку...', 'warning');
+      run('cancelUpdateProcess').then(() => {
+        logMessage('Процесс будет остановлен после завершения текущей операции.', 'info');
+      });
+    });
+
+    ui.emergencyBtn.addEventListener('click', () => {
+      if (!confirm('ВНИМАНИЕ!\nЭто действие немедленно остановит все процессы и полностью сбросит текущий прогресс. Вы уверены?')) return;
+      ui.emergencyBtn.disabled = true;
+      ui.emergencyBtn.textContent = 'Сброс...';
+      logMessage('АВАРИЙНАЯ ОСТАНОВКА...', 'error');
+      run('stopAllProcesses').then(() => {
+        logMessage('Все процессы остановлены и сброшены.', 'success');
+        run('getUpdateStatus').then(updateUI);
+      });
+    });
+
+    ui.saveScheduleBtn.addEventListener('click', async () => {
+      ui.saveScheduleBtn.disabled = true;
+      ui.saveScheduleBtn.textContent = 'Сохр...';
+      const freq = ui.scheduleSelect.value;
+      const result = await (freq === 'disabled'
+        ? run('deleteScheduledTrigger')
+        : run('createScheduledTrigger', freq));
+      updateScheduleUI(result);
+    });
+    
+    function applySearchHistory(history) {
+      if (history) {
+        if (history.lastRegion) ui.regionInput.value = history.lastRegion;
+        if (history.lastQuery) ui.searchQueryInput.value = history.lastQuery;
+      }
+    }
+
+    function updateUI(s) {
+      if (!s) return;
+      ui.emergencyBtn.disabled = false;
+      ui.emergencyBtn.textContent = 'Аварийная остановка (Сброс)';
+
+      if (s.isUpdating) {
+        setState('loading', s.cancelRequested);
+        startPolling();
+      } else {
+        stopPolling();
+        setState(s.canContinue ? 'paused' : 'idle');
+      }
+
+      ui.statusMsg.textContent = s.progressMessage || 'Ожидание...';
+      ui.progressBar.style.width = (s.totalProgress || 0) + '%';
+      
+      if (s.stats) {
+        ui.statNew.textContent = s.stats.new || '0';
+        ui.statUpdated.textContent = s.stats.updated || '0';
+        ui.statClosed.textContent = s.stats.closed || '0';
+        ui.statSpeed.childNodes[0].nodeValue = s.stats.speed || '0';
+      }
+
+      if (s.liveLog && ui.logArea.innerHTML !== s.liveLog) {
+        ui.logArea.innerHTML = s.liveLog;
+        if(ui.logArea.style.display === 'block') ui.logArea.scrollTop = ui.logArea.scrollHeight;
+      }
+
+      if (s.finalSummary) {
+        ui.progressBar.style.width = '100%';
+        showResults(s.finalSummary);
+      } else {
+        ui.resultsArea.style.display = 'none';
+      }
+    }
+
+    function setState(state, canceling = false) {
+      ui.startBtn.style.display = 'none';
+      ui.continueBtn.style.display = 'none';
+      ui.stopBtn.style.display = 'none';
+
+      const isProcessActive = state === 'loading' || state === 'paused';
+      ui.logArea.style.display = isProcessActive ? 'block' : 'none';
+      ui.regionInput.disabled = isProcessActive;
+
+      if (state === 'loading') {
+        ui.stopBtn.style.display = 'block';
+        ui.stopBtn.disabled = canceling;
+        if (canceling) ui.statusMsg.textContent = 'Отмена...';
+      } else if (state === 'paused') {
+        ui.startBtn.style.display = 'block';
+        ui.continueBtn.style.display = 'block';
+        ui.startBtn.textContent = 'Начать заново';
+      } else { // idle
+        ui.startBtn.style.display = 'block';
+        ui.startBtn.textContent = 'Запустить обновление';
+      }
+    }
+
+    function startPolling() { if (!isPolling) { isPolling = true; poll(); } }
+    function stopPolling() { isPolling = false; }
+    function poll() {
+      if (!isPolling) return;
+      run('getUpdateStatus')
+        .then(s => { updateUI(s); if (isPolling) setTimeout(poll, 4000); })
+        .catch(() => { if (isPolling) setTimeout(poll, 15000); });
+    }
+
+    function onStart(r) {
+      if (r.status === 'success') {
+        logMessage(r.message, 'success');
+        startPolling();
+      } else onError(r);
+    }
+    function onError(e) {
+      logMessage(`Ошибка: ${e.message || e}`, 'error');
+      run('getUpdateStatus').then(updateUI); // Refresh state on error
+    }
+
+    function logMessage(text, type) {
+      const colors = { info: '#94a3b8', success: '#22c55e', warning: '#f59e0b', error: '#ef4444' };
+      const time = new Date().toLocaleTimeString('ru-RU');
+      ui.logArea.style.display = 'block';
+      ui.logArea.innerHTML += `<p style="color:${colors[type]}">[${time}] ${text}</p>`;
+      ui.logArea.scrollTop = ui.logArea.scrollHeight;
+    }
+
+    function showResults(s) {
+      ui.resultsArea.style.display = 'block';
+      ui.resultsArea.innerHTML = `
+        <h3>${s.message}</h3>
+        <p><strong>Время выполнения:</strong> ${s.duration}</p>
+        <p><strong>Обработано городов:</strong> ${s.citiesProcessed}</p>
+        <p><strong>Всего найдено новых объектов:</strong> ${s.totalObjectsFound}</p>
+        <p>
+          <a href="${s.sheetUrl}" target="_blank">Открыть таблицу</a> |
+          <a href="${s.dashboardUrl}" target="_blank">Открыть дашборд</a>
+        </p>
+      `;
+    }
+
+    function updateScheduleUI(r) {
+      ui.saveScheduleBtn.disabled = false;
+      ui.saveScheduleBtn.textContent = 'Сохранить';
+      if (r?.status) {
+        ui.scheduleStatus.textContent = `Текущий статус: ${r.status}`;
+        if (r.status.includes('07:00')) ui.scheduleSelect.value = 'weekly-morning';
+        else if (r.status.includes('Еженедельно')) ui.scheduleSelect.value = 'weekly';
+        else if (r.status.includes('Ежемесячно')) ui.scheduleSelect.value = 'monthly';
+        else ui.scheduleSelect.value = 'disabled';
+      }
+    }
+  </script>
+</body>
+</html>
