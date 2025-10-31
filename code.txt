@@ -90,23 +90,24 @@ function continueUpdateProcess(region) {
     const newTarget = region.trim();
     addLogEntry_(`Перенаправление процесса на новую цель: "${newTarget}"...`, 'info');
     
-    const originalRegions = JSON.parse(props.regionsToProcess || '[]');
+    const originalRegions = ALL_REGIONS_LIST; // ALWAYS use the full list for redirection
     const startIndex = originalRegions.findIndex(r => r.toLowerCase() === newTarget.toLowerCase());
 
     if (startIndex !== -1) {
-      // Цель - это регион из текущего плана. Обрезаем список и начинаем с него.
+      // The target is a region from the master plan. Slice the list and start from there.
       const newRegionsToProcess = originalRegions.slice(startIndex);
       SCRIPT_PROPERTIES.setProperties({
         'regionsToProcess': JSON.stringify(newRegionsToProcess),
         'currentRegionIndex': '0',
         'currentSettlementIndex': '0',
-        'settlementsForCurrentRegion': '[]'
+        'settlementsForCurrentRegion': '[]',
+        'isFullUpdate': 'true' // Treat as a full update from now on
       });
       SCRIPT_PROPERTIES.deleteProperty('settlementsOverride');
       addLogEntry_(`Процесс продолжен с региона "${newTarget}" и далее по списку.`, 'success');
     } else {
-      // Цель не найдена в списке регионов (вероятно, это город).
-      // Выполняем поиск только по этой цели, как при старте нового процесса.
+      // The target was not found in the region list (likely a city).
+      // Perform a search only for this target, like starting a new process.
       addLogEntry_(`Регион "${newTarget}" не найден в плане. Будет выполнен отдельный поиск только по этой цели.`, 'warning');
       const regionsToProcess = [`Поиск: "${newTarget}"`];
       const settlementsOverride = JSON.stringify([newTarget]);
@@ -114,7 +115,8 @@ function continueUpdateProcess(region) {
         'regionsToProcess': JSON.stringify(regionsToProcess),
         'currentRegionIndex': '0',
         'currentSettlementIndex': '0',
-        'settlementsForCurrentRegion': '[]'
+        'settlementsForCurrentRegion': '[]',
+        'isFullUpdate': 'false' // This is a single, targeted search
       });
       SCRIPT_PROPERTIES.setProperty('settlementsOverride', settlementsOverride);
     }
