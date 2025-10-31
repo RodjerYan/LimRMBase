@@ -152,6 +152,7 @@
         <div class="grok-field">
           <label for="regionInput">Регион или город</label>
           <input type="text" id="regionInput" placeholder="Оставьте пустым для всей РФ">
+          <p id="continueHelperText" style="display: none; font-size: 12px; color: var(--grok-text-muted); margin-top: 6px;"></p>
         </div>
         <div class="grok-field">
           <label for="searchQuery">Что искать?</label>
@@ -234,6 +235,7 @@
       resultsArea: document.getElementById('resultsArea'),
       regionInput: document.getElementById('regionInput'),
       searchQueryInput: document.getElementById('searchQuery'),
+      continueHelperText: document.getElementById('continueHelperText'),
       scheduleSelect: document.getElementById('scheduleSelect'),
       saveScheduleBtn: document.getElementById('saveScheduleBtn'),
       scheduleStatus: document.getElementById('scheduleStatus'),
@@ -356,6 +358,7 @@
       ui.startBtn.style.display = 'none';
       ui.continueBtn.style.display = 'none';
       ui.stopBtn.style.display = 'none';
+      ui.continueHelperText.style.display = 'none';
 
       const isProcessActive = state === 'loading' || state === 'paused';
       if (isProcessActive) {
@@ -375,6 +378,8 @@
         ui.startBtn.textContent = 'Начать заново';
         ui.regionInput.disabled = false;
         ui.regionInput.placeholder = "Введите регион для перехода или оставьте пустым";
+        ui.continueHelperText.textContent = 'Чтобы продолжить с текущей точки, оставьте поле пустым. Для перехода к другому региону, введите его название и нажмите «Продолжить».';
+        ui.continueHelperText.style.display = 'block';
       } else { // idle
         ui.startBtn.style.display = 'block';
         ui.startBtn.textContent = 'Запустить обновление';

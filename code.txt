@@ -202,8 +202,25 @@ function mainProcessManager() {
       addLogEntry_(`--- Обработка нового региона: ${currentRegion} (${regionIndex + 1}/${regions.length}) ---`, 'success');
 
       const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-      if (props.isFullUpdate === 'true' && regionIndex === 0) prepareForSmartUpdate_(sheet, 'full', null);
-      else if (props.isFullUpdate !== 'true') prepareForSmartUpdate_(sheet, detectRegionType_(currentRegion), currentRegion);
+      const isFullRun = props.isFullUpdate === 'true';
+      const isFreshStartOfProcess = regionIndex === 0;
+
+      if (isFullRun) {
+        const isFreshFullUpdate = regions.length === ALL_REGIONS_LIST.length;
+        if (isFreshFullUpdate) {
+          // Это новый полный прогон. Готовим всю таблицу один раз в самом начале.
+          if (isFreshStartOfProcess) {
+            prepareForSmartUpdate_(sheet, 'full', null);
+          }
+          // Для последующих регионов ничего делать не нужно.
+        } else {
+          // Это "продолженный" полный прогон. Готовим каждый регион по отдельности.
+          prepareForSmartUpdate_(sheet, detectRegionType_(currentRegion), currentRegion);
+        }
+      } else {
+        // Это одиночный поиск по региону/городу. Готовим только его.
+        prepareForSmartUpdate_(sheet, detectRegionType_(currentRegion), currentRegion);
+      }
 
       let newSettlements;
       if (props.settlementsOverride) {
