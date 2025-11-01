@@ -20,6 +20,55 @@ const REGION_NAME_MAP_TO_OSM = {
   "Донецкая область": "Донецкая Народная Республика",
   "Луганская область": "Луганская Народная Республика"
 };
+const CITY_TO_REGION_MAP = {
+  // === КАЛИНИНГРАДСКАЯ ОБЛАСТЬ ===
+  'калининград': 'Калининградская область',
+  'гвардейск': 'Калининградская область',
+  'светлый': 'Калининградская область',
+  'зеленоградск': 'Калининградская область',
+  'гурьевск': 'Калининградская область',
+  'пионерский': 'Калининградская область',
+  'советск': 'Калининградская область',
+  'светлогорск': 'Калининградская область',
+  'багратионовск': 'Калининградская область',
+  'черняховск': 'Калининградская область',
+  'балтийск': 'Калининградская область',
+
+  // === САНКТ-ПЕТЕРБУРГ + ЛЕНИНГРАДСКАЯ ОБЛАСТЬ ===
+  'санкт-петербург': 'Санкт-Петербург',
+  'кудрово': 'Ленинградская область',
+  'мурино': 'Ленинградская область',
+  'всеволожск': 'Ленинградская область',
+  'выборг': 'Ленинградская область',
+  'гатчина': 'Ленинградская область',
+  'ломоносов': 'Санкт-Петербург',
+  'сосновый бор': 'Ленинградская область',
+  'кировск': 'Ленинградская область',
+  'тосно': 'Ленинградская область',
+  'колпино': 'Санкт-Петербург',
+  'пушкин': 'Санкт-Петербург',
+  'петергоф': 'Санкт-Петербург',
+  'сестрорецк': 'Санкт-Петербург',
+  'кронштадт': 'Санкт-Петербург',
+  'коммунар': 'Ленинградская область',
+  'тихвин': 'Ленинградская область',
+  'сланцы': 'Ленинградская область',
+  'приозерск': 'Ленинградская область',
+  'волхов': 'Ленинградская область',
+
+  // === НОВГОРОДСКАЯ ОБЛАСТЬ ===
+  'великий новгород': 'Новгородская область',
+
+  // === РАНЕЕ ДОБАВЛЕННЫЕ (ДНР, Запорожье) ===
+  'енакиево': 'Донецкая Народная Республика',
+  'шахтерск': 'Донецкая Народная Республика',
+  'торез': 'Донецкая Народная Республика',
+  'снежное': 'Донецкая Народная Республика',
+  'харцызск': 'Донецкая Народная Республика',
+  'мелитополь': 'Запорожская область',
+  'бердянск': 'Запорожская область',
+  'геническ': 'Запорожская область'
+};
 const EMERGENCY_STOP_FLAG = 'emergencyStopFlag'; // Флаг для надёжной остановки
 let GEOAPIFY_LAST_CALL_TIMESTAMP = 0; // Для ограничителя скорости
 
@@ -89,6 +138,27 @@ function continueUpdateProcess(region) {
   const props = SCRIPT_PROPERTIES.getProperties();
   if (!props.currentRegionIndex || props.finalSummary) return { status: 'error', message: 'Нет сохраненного состояния для продолжения.' };
 
+  const errorCount = parseInt(props.consecutiveErrors || '0');
+  if (errorCount > 0) {
+    try {
+        const emailAddress = 'rodjeryan@gmail.com';
+        const subject = 'Уведомление: Возобновление обновления базы';
+        const regions = JSON.parse(props.regionsToProcess || '[]');
+        const regionIndex = parseInt(props.currentRegionIndex || '0');
+        const lastRegion = regions[regionIndex] || 'Неизвестный регион';
+        
+        const body = `Здравствуйте,\n\nАвтоматическое обновление базы данных было возобновлено после паузы, вызванной ошибкой.\n\n` +
+                     `Последний обрабатываемый регион: ${lastRegion}\n` +
+                     `Количество ошибок перед паузой: ${errorCount}\n\n` +
+                     `Процесс продолжается в штатном режиме.`;
+        
+        GmailApp.sendEmail(emailAddress, subject, body);
+        addLogEntry_(`Отправлено email-уведомление о возобновлении после ошибки на ${emailAddress}`, 'info');
+    } catch (e) {
+        addLogEntry_(`Не удалось отправить email-уведомление: ${e.message}`, 'error');
+    }
+  }
+
   SCRIPT_PROPERTIES.deleteProperty(EMERGENCY_STOP_FLAG);
   
   if (region && region.trim()) {
@@ -99,20 +169,17 @@ function continueUpdateProcess(region) {
     const startIndex = originalRegions.findIndex(r => r.toLowerCase() === newTarget.toLowerCase());
 
     if (startIndex !== -1) {
-      // The target is a region from the master plan. Slice the list and start from there.
       const newRegionsToProcess = originalRegions.slice(startIndex);
       SCRIPT_PROPERTIES.setProperties({
         'regionsToProcess': JSON.stringify(newRegionsToProcess),
         'currentRegionIndex': '0',
         'currentSettlementIndex': '0',
         'settlementsForCurrentRegion': '[]',
-        'isFullUpdate': 'true' // Treat as a full update from now on
+        'isFullUpdate': 'true'
       });
       SCRIPT_PROPERTIES.deleteProperty('settlementsOverride');
       addLogEntry_(`Процесс продолжен с региона "${newTarget}" и далее по списку.`, 'success');
     } else {
-      // The target was not found in the region list (likely a city).
-      // Perform a search only for this target, like starting a new process.
       addLogEntry_(`Регион "${newTarget}" не найден в плане. Будет выполнен отдельный поиск только по этой цели.`, 'warning');
       const regionsToProcess = [`Поиск: "${newTarget}"`];
       const settlementsOverride = JSON.stringify([newTarget]);
@@ -121,7 +188,7 @@ function continueUpdateProcess(region) {
         'currentRegionIndex': '0',
         'currentSettlementIndex': '0',
         'settlementsForCurrentRegion': '[]',
-        'isFullUpdate': 'false' // This is a single, targeted search
+        'isFullUpdate': 'false'
       });
       SCRIPT_PROPERTIES.setProperty('settlementsOverride', settlementsOverride);
     }
@@ -139,6 +206,7 @@ function continueUpdateProcess(region) {
   return { status: 'success', message: 'Процесс перенаправлен и возобновлён.' };
 }
 
+
 function cancelUpdateProcess() {
   SCRIPT_PROPERTIES.setProperty('cancelRequested', 'true');
   return { status: 'success', message: 'Запрос на остановку отправлен.' };
@@ -147,14 +215,10 @@ function cancelUpdateProcess() {
 function stopAllProcesses() {
   addLogEntry_('Аварийная остановка инициирована...', 'error');
   
-  // 1. Немедленно удаляем все будущие триггеры.
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   
-  // 2. Устанавливаем "kill switch" флаг. Текущий запущенный процесс проверит его
-  // и не создаст новый триггер, надёжно прерывая цепочку.
   SCRIPT_PROPERTIES.setProperty(EMERGENCY_STOP_FLAG, 'true');
 
-  // 3. Обновляем статус, чтобы UI немедленно отреагировал.
   SCRIPT_PROPERTIES.setProperty('isUpdating', 'false');
   SCRIPT_PROPERTIES.setProperty('progressMessage', 'Аварийная остановка. Процесс сброшен.');
   
@@ -164,10 +228,9 @@ function stopAllProcesses() {
 // ===================================================================================
 // === МЕНЕДЖЕР ПРОЦЕССА ===
 function mainProcessManager() {
-  // Проверяем "kill switch" в самом начале на случай, если триггер сработал после команды остановки.
   if (SCRIPT_PROPERTIES.getProperty(EMERGENCY_STOP_FLAG) === 'true') {
-    SCRIPT_PROPERTIES.deleteProperty(EMERGENCY_STOP_FLAG); // Очищаем флаг
-    return; // Прерываем выполнение
+    SCRIPT_PROPERTIES.deleteProperty(EMERGENCY_STOP_FLAG);
+    return;
   }
 
   const lock = LockService.getScriptLock();
@@ -213,24 +276,20 @@ function mainProcessManager() {
       if (isFullRun) {
         const isFreshFullUpdate = regions.length === ALL_REGIONS_LIST.length;
         if (isFreshFullUpdate) {
-          // Это новый полный прогон. Готовим всю таблицу один раз в самом начале.
           if (isFreshStartOfProcess) {
             prepareForSmartUpdate_(sheet, 'full', null);
           }
-          // Для последующих регионов ничего делать не нужно.
         } else {
-          // Это "продолженный" полный прогон. Готовим каждый регион по отдельности.
           prepareForSmartUpdate_(sheet, detectRegionType_(currentRegion), currentRegion);
         }
       } else {
-        // Это одиночный поиск по региону/городу. Готовим только его.
         prepareForSmartUpdate_(sheet, detectRegionType_(currentRegion), currentRegion);
       }
 
       let newSettlements;
       if (props.settlementsOverride) {
         newSettlements = JSON.parse(props.settlementsOverride);
-        SCRIPT_PROPERTIES.deleteProperty('settlementsOverride'); // Используем один раз и удаляем
+        SCRIPT_PROPERTIES.deleteProperty('settlementsOverride');
       } else {
         newSettlements = getSettlementsForRegion_(currentRegion) || [];
       }
@@ -353,7 +412,6 @@ function searchByOSM_(settlementName, regionName) {
   }
 
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
-  // УНИВЕРСАЛЬНЫЙ ЗАПРОС V5: Ищет регион/страну (level 2|4), затем город внутри, затем объекты
   const query = `
     [out:json][timeout:180];
     area["name"="${osmRegionName}"]["admin_level"~"2|4"]->.regionArea;
@@ -407,6 +465,8 @@ function searchByOSM_(settlementName, regionName) {
              }
           }
 
+          const realRegion = findRegionForCity_(settlementName);
+
           return {
             id: `osm-${el.id}`,
             name: tags.name || 'Без названия',
@@ -417,7 +477,7 @@ function searchByOSM_(settlementName, regionName) {
             lon: coords.lon,
             source: 'OSM',
             city: settlementName,
-            region: regionName
+            region: realRegion || regionName
           };
         });
         
@@ -497,7 +557,6 @@ function getSettlementsForRegion_(region) {
 
   addLogEntry_(`Запрос списка городов и посёлков для "${region}" (используется имя OSM: "${osmRegionName}")...`, 'info');
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
-  // УНИВЕРСАЛЬНЫЙ ЗАПРОС V7: Ищет регион или страну (level 2|4) и все города/пгт внутри
   const query = `
     [out:json][timeout:120];
     (
@@ -707,6 +766,12 @@ function finalizeSmartUpdate_() {
 
 // ===================================================================================
 // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+function findRegionForCity_(cityName) {
+  if (!cityName) return null;
+  const cityKey = cityName.toString().toLowerCase().trim();
+  return CITY_TO_REGION_MAP[cityKey] || null;
+}
+
 function getUpdateStatus() {
   const props = SCRIPT_PROPERTIES.getProperties();
   const logs = getLogEntries_();
