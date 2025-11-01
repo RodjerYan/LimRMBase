@@ -17,6 +17,7 @@ const SCHEDULED_TRIGGER_HANDLER = 'runScheduledFullUpdate';
 const OSM_CACHE_EXPIRATION = 86400; // 24 часа
 const GEOAPIFY_API_KEY = 'd05c1c5c8bf447158d04cc3f49dee5fe';
 const OBJECT_PROCESS_CHUNK_SIZE = 45;
+const LARGE_PROPERTY_CHUNK_SIZE = 8000; // Лимит свойства - 9KB, берем с запасом
 const REGION_NAME_MAP_TO_OSM = {
   "Донецкая область": "Донецкая Народная Республика",
   "Луганская область": "Луганская Народная Республика"
@@ -254,18 +255,18 @@ function mainProcessManager() {
     let regionIndex = parseInt(props.currentRegionIndex || '0');
     let settlementIndex = parseInt(props.currentSettlementIndex || '0');
     let settlements = JSON.parse(props.settlementsForCurrentRegion || '[]');
-
-    const pendingObjectsJSON = props.pendingObjectsForSettlement;
-    if (pendingObjectsJSON) {
+    
+    let pendingObjects = loadLargeProperty_('pendingObjectsForSettlement');
+    if (pendingObjects) {
       const settlementName = settlements[settlementIndex];
-      let pendingObjects = JSON.parse(pendingObjectsJSON);
-      const chunkToProcess = pendingObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
-      const remainingCount = pendingObjects.length;
+      const regionName = regions[regionIndex];
+      const rawChunkToProcess = pendingObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
+      
+      addLogEntry_(`→ ${settlementName}: обработка порции (${rawChunkToProcess.length} шт.), осталось ${pendingObjects.length}`, 'info');
 
-      addLogEntry_(`→ ${settlementName}: обработка порции (${chunkToProcess.length} шт.), осталось ${remainingCount}`, 'info');
-
+      const formattedChunk = processOsmChunk_(rawChunkToProcess, settlementName, regionName);
       const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-      const stats = smartUpdateSheet_(sheet, chunkToProcess, settlementName);
+      const stats = smartUpdateSheet_(sheet, formattedChunk, settlementName);
       let { new: newCnt, updated: updCnt, closed: closedCnt } = stats;
 
       addLogEntry_(`→ ${settlementName} (порция): +${newCnt} новых, ${updCnt} обновлено, ${closedCnt} закрыто`, 'success');
@@ -276,11 +277,11 @@ function mainProcessManager() {
         'totalClosed': (parseInt(props.totalClosed || '0') + closedCnt).toString()
       };
 
-      if (remainingCount > 0) {
-        propsToUpdate.pendingObjectsForSettlement = JSON.stringify(pendingObjects);
+      if (pendingObjects.length > 0) {
+        saveLargeProperty_('pendingObjectsForSettlement', pendingObjects);
       } else {
         addLogEntry_(`✅ Завершили обработку всех объектов для "${settlementName}".`, 'success');
-        SCRIPT_PROPERTIES.deleteProperty('pendingObjectsForSettlement');
+        clearLargeProperty_('pendingObjectsForSettlement');
         const newSettlementIndex = settlementIndex + 1;
         propsToUpdate.currentSettlementIndex = newSettlementIndex.toString();
         if (newSettlementIndex >= settlements.length) {
@@ -352,17 +353,17 @@ function mainProcessManager() {
     const regionName = regions[regionIndex];
     
     const result = searchByOSM_(settlementName, regionName);
-    const allObjects = (result && result.status === 'success' && result.data) ? result.data : [];
+    let allObjects = (result && result.status === 'success' && result.data) ? result.data : []; // Raw OSM elements
 
     if (allObjects.length > 0) {
       const totalFound = allObjects.length;
-      const chunkToProcess = allObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
-      const remainingCount = allObjects.length;
-
-      addLogEntry_(`→ ${settlementName}: обработка первой порции (${chunkToProcess.length} из ${totalFound} шт.)...`, 'info');
+      const rawChunkToProcess = allObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
       
+      addLogEntry_(`→ ${settlementName}: обработка первой порции (${rawChunkToProcess.length} из ${totalFound} шт.)...`, 'info');
+      
+      const formattedChunk = processOsmChunk_(rawChunkToProcess, settlementName, regionName);
       const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-      const stats = smartUpdateSheet_(sheet, chunkToProcess, settlementName);
+      const stats = smartUpdateSheet_(sheet, formattedChunk, settlementName);
       let { new: newCnt, updated: updCnt, closed: closedCnt } = stats;
 
       addLogEntry_(`→ ${settlementName} (порция): +${newCnt} новых, ${updCnt} обновлено, ${closedCnt} закрыто`, 'success');
@@ -374,9 +375,7 @@ function mainProcessManager() {
         'consecutiveErrors': '0'
       };
 
-      if (remainingCount > 0) {
-        propsToUpdate.pendingObjectsForSettlement = JSON.stringify(allObjects);
-      } else {
+      if (allObjects.length === 0) { // If everything fit in the first chunk
         const newSettlementIndex = settlementIndex + 1;
         propsToUpdate.currentSettlementIndex = newSettlementIndex.toString();
         if (newSettlementIndex >= settlements.length) {
@@ -385,6 +384,11 @@ function mainProcessManager() {
         }
       }
       SCRIPT_PROPERTIES.setProperties(propsToUpdate);
+      
+      if (allObjects.length > 0) { // If objects remain, save them for the next run
+        saveLargeProperty_('pendingObjectsForSettlement', allObjects);
+      }
+
     } else {
       addLogEntry_(`→ ${settlementName}: ничего не найдено`, 'info');
       const newSettlementIndex = settlementIndex + 1;
@@ -452,14 +456,63 @@ function updateProgressMessage_(regions, ri, si, settlements, props) {
 
 // ===================================================================================
 // === РАБОТА С OpenStreetMap И ГЕОКОДЕРАМИ ===
+
+function processOsmChunk_(elements, settlementName, regionName) {
+  if (!elements || elements.length === 0) return [];
+  
+  return elements.map(el => {
+    const tags = el.tags || {};
+    const coords = el.center ? { lat: el.center.lat, lon: el.center.lon } : { lat: el.lat, lon: el.lon };
+    
+    let category = 'Не определена';
+    if (tags.amenity === 'veterinary') {
+      category = 'Ветеринарная клиника';
+    } else if (tags.shop === 'pet') {
+      category = 'Зоомагазин';
+    }
+    
+    let address = buildAddressFromTags_(tags);
+    if (address.startsWith('Координаты:')) {
+       const geoapifyAddress = getAddressFromGeoapify_(coords.lat, coords.lon);
+       if (geoapifyAddress) {
+         address = geoapifyAddress;
+       } else {
+         address = `Координаты: ${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}`;
+       }
+    }
+
+    const realRegion = findRegionForCity_(settlementName);
+
+    return {
+      id: `osm-${el.id}`,
+      name: tags.name || 'Без названия',
+      category: category,
+      address: address,
+      phone: tags.phone || tags['contact:phone'] || '',
+      lat: coords.lat,
+      lon: coords.lon,
+      source: 'OSM',
+      city: settlementName,
+      region: realRegion || regionName
+    };
+  });
+}
+
 function searchByOSM_(settlementName, regionName) {
   const osmRegionName = REGION_NAME_MAP_TO_OSM[regionName] || regionName;
   addLogEntry_(`Поиск OSM для "${settlementName}" в регионе "${regionName}" (OSM: ${osmRegionName})`, 'info');
-  const cacheKey = `osm_v5_${osmRegionName}_${settlementName}_vet_pet_shops`;
+  const cacheKey = `osm_raw_v6_${osmRegionName}_${settlementName}_vet_pet_shops`;
   const cached = SCRIPT_CACHE.get(cacheKey);
   if (cached) {
-    addLogEntry_('Данные OSM взяты из кэша.', 'info');
-    return JSON.parse(cached);
+    try {
+      const parsedCache = JSON.parse(cached);
+      if (parsedCache && parsedCache.status === 'success') {
+        addLogEntry_('Данные OSM (raw) взяты из кэша.', 'info');
+        return parsedCache;
+      }
+    } catch(e) {
+      // ignore corrupted cache
+    }
   }
 
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
@@ -486,52 +539,20 @@ function searchByOSM_(settlementName, regionName) {
       const response = UrlFetchApp.fetch(overpassUrl, options);
       const responseCode = response.getResponseCode();
       if (responseCode === 200) {
-        const data = JSON.parse(response.getContentText());
+        const responseText = response.getContentText();
+        const data = JSON.parse(responseText);
         const elements = data.elements;
 
         if (elements.length > 0) {
-          addLogEntry_(`Найдено ${elements.length} объектов через OSM.`, 'info');
+          addLogEntry_(`Найдено ${elements.length} объектов через OSM. Начинается обработка порциями.`, 'success');
         }
-
-        const formattedData = elements.map(el => {
-          const tags = el.tags || {};
-          const coords = el.center ? { lat: el.center.lat, lon: el.center.lon } : { lat: el.lat, lon: el.lon };
-          
-          let category = 'Не определена';
-          if (tags.amenity === 'veterinary') {
-            category = 'Ветеринарная клиника';
-          } else if (tags.shop === 'pet') {
-            category = 'Зоомагазин';
-          }
-          
-          let address = buildAddressFromTags_(tags);
-          if (address.startsWith('Координаты:')) {
-             const geoapifyAddress = getAddressFromGeoapify_(coords.lat, coords.lon);
-             if (geoapifyAddress) {
-               address = geoapifyAddress;
-             } else {
-               address = `Координаты: ${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}`;
-             }
-          }
-
-          const realRegion = findRegionForCity_(settlementName);
-
-          return {
-            id: `osm-${el.id}`,
-            name: tags.name || 'Без названия',
-            category: category,
-            address: address,
-            phone: tags.phone || tags['contact:phone'] || '',
-            lat: coords.lat,
-            lon: coords.lon,
-            source: 'OSM',
-            city: settlementName,
-            region: realRegion || regionName
-          };
-        });
         
-        const result = { status: 'success', data: formattedData };
-        SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
+        const result = { status: 'success', data: elements }; // Return RAW data
+        
+        // Only cache if the data is not too large
+        if (responseText.length < 95000) { // Cache limit is 100KB
+            SCRIPT_CACHE.put(cacheKey, JSON.stringify(result), OSM_CACHE_EXPIRATION);
+        }
         return result;
 
       } else {
@@ -680,7 +701,10 @@ function smartUpdateSheet_(sheet, newData, currentCity) {
 
   const essentialCols = ['ID OSM', 'Город', 'Статус'];
   for (const col of essentialCols) {
-    if (colMap[col] === undefined) throw new Error(`В таблице отсутствует обязательный столбец "${col}".`);
+    if (colMap[col] === undefined) {
+      addLogEntry_(`Критическая ошибка: В таблице отсутствует обязательный столбец "${col}". Добавление данных невозможно.`, 'error');
+      throw new Error(`В таблице отсутствует обязательный столбец "${col}".`);
+    }
   }
 
   const allData = sheet.getDataRange().getValues().slice(1);
@@ -750,7 +774,7 @@ function prepareForSmartUpdate_(sheet, type, region) {
   const colMap = headers.reduce((acc, h, i) => { acc[h] = i; return acc; }, {});
 
   if (colMap['Статус'] === undefined || colMap['Источник'] === undefined || colMap['Субъект'] === undefined || colMap['Город'] === undefined) {
-    addLogEntry_('Пропуск маркировки: отсутствуют необходимые колонки (Статус, Источник, Субъект, Город).', 'warning');
+    addLogEntry_('Пропуск маркировки: отсутствуют необходимые колонки (Статус, Источник, Субъект, Город). Обновление будет работать в режиме "только добавление".', 'warning');
     return;
   }
   const statusColIndex = colMap['Статус'];
@@ -866,6 +890,8 @@ function clearProcessProperties_() {
   if (keys.length > 0) {
     keys.forEach(key => SCRIPT_PROPERTIES.deleteProperty(key));
   }
+  // Make sure to clear any orphaned large property chunks too
+  clearLargeProperty_('pendingObjectsForSettlement');
 }
 
 function deleteProcessTriggers_() {
@@ -903,6 +929,61 @@ function detectRegionType_(regionName) {
     return 'region';
   }
   return 'city';
+}
+
+// === ОБРАБОТКА БОЛЬШИХ СВОЙСТВ ===
+function saveLargeProperty_(key, data) {
+  const dataString = JSON.stringify(data);
+  const numChunks = Math.ceil(dataString.length / LARGE_PROPERTY_CHUNK_SIZE);
+  
+  clearLargeProperty_(key);
+
+  const propsToSet = {};
+  propsToSet[`${key}_numChunks`] = numChunks.toString();
+  for (let i = 0; i < numChunks; i++) {
+    const chunk = dataString.substring(i * LARGE_PROPERTY_CHUNK_SIZE, (i + 1) * LARGE_PROPERTY_CHUNK_SIZE);
+    propsToSet[`${key}_chunk_${i}`] = chunk;
+  }
+  SCRIPT_PROPERTIES.setProperties(propsToSet);
+}
+
+function loadLargeProperty_(key) {
+  const props = SCRIPT_PROPERTIES.getProperties();
+  const numChunks = parseInt(props[`${key}_numChunks`] || '0');
+  if (numChunks === 0) return null;
+
+  let dataString = '';
+  for (let i = 0; i < numChunks; i++) {
+    const chunk = props[`${key}_chunk_${i}`];
+    if (chunk === undefined || chunk === null) {
+      addLogEntry_(`Ошибка чтения большого свойства: чанк ${i} для ключа ${key} отсутствует.`, 'error');
+      clearLargeProperty_(key); // Clean up corrupted data
+      return null;
+    }
+    dataString += chunk;
+  }
+  
+  try {
+    return JSON.parse(dataString);
+  } catch (e) {
+    addLogEntry_(`Ошибка парсинга большого свойства для ключа ${key}: ${e.message}`, 'error');
+    clearLargeProperty_(key);
+    return null;
+  }
+}
+
+function clearLargeProperty_(key) {
+    const props = SCRIPT_PROPERTIES.getProperties();
+    const numChunks = parseInt(props[`${key}_numChunks`] || '0');
+    const keysToDelete = [`${key}_numChunks`];
+    for (let i = 0; i < numChunks; i++) {
+        keysToDelete.push(`${key}_chunk_${i}`);
+    }
+    keysToDelete.forEach(k => {
+      if (props[k] !== undefined) {
+        SCRIPT_PROPERTIES.deleteProperty(k);
+      }
+    });
 }
 
 // === ПЛАНИРОВЩИК ===
