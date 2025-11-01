@@ -16,6 +16,7 @@ const SCRIPT_CACHE = CacheService.getScriptCache();
 const SCHEDULED_TRIGGER_HANDLER = 'runScheduledFullUpdate';
 const OSM_CACHE_EXPIRATION = 86400; // 24 часа
 const GEOAPIFY_API_KEY = 'd05c1c5c8bf447158d04cc3f49dee5fe';
+const OBJECT_PROCESS_CHUNK_SIZE = 45;
 const REGION_NAME_MAP_TO_OSM = {
   "Донецкая область": "Донецкая Народная Республика",
   "Луганская область": "Луганская Народная Республика"
@@ -249,11 +250,49 @@ function mainProcessManager() {
     }
 
     SCRIPT_PROPERTIES.setProperty('lastHeartbeat', new Date().getTime().toString());
-
     const regions = JSON.parse(props.regionsToProcess);
     let regionIndex = parseInt(props.currentRegionIndex || '0');
     let settlementIndex = parseInt(props.currentSettlementIndex || '0');
     let settlements = JSON.parse(props.settlementsForCurrentRegion || '[]');
+
+    const pendingObjectsJSON = props.pendingObjectsForSettlement;
+    if (pendingObjectsJSON) {
+      const settlementName = settlements[settlementIndex];
+      let pendingObjects = JSON.parse(pendingObjectsJSON);
+      const chunkToProcess = pendingObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
+      const remainingCount = pendingObjects.length;
+
+      addLogEntry_(`→ ${settlementName}: обработка порции (${chunkToProcess.length} шт.), осталось ${remainingCount}`, 'info');
+
+      const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+      const stats = smartUpdateSheet_(sheet, chunkToProcess, settlementName);
+      let { new: newCnt, updated: updCnt, closed: closedCnt } = stats;
+
+      addLogEntry_(`→ ${settlementName} (порция): +${newCnt} новых, ${updCnt} обновлено, ${closedCnt} закрыто`, 'success');
+
+      const propsToUpdate = {
+        'totalNew': (parseInt(props.totalNew || '0') + newCnt).toString(),
+        'totalUpdated': (parseInt(props.totalUpdated || '0') + updCnt).toString(),
+        'totalClosed': (parseInt(props.totalClosed || '0') + closedCnt).toString()
+      };
+
+      if (remainingCount > 0) {
+        propsToUpdate.pendingObjectsForSettlement = JSON.stringify(pendingObjects);
+      } else {
+        addLogEntry_(`✅ Завершили обработку всех объектов для "${settlementName}".`, 'success');
+        SCRIPT_PROPERTIES.deleteProperty('pendingObjectsForSettlement');
+        const newSettlementIndex = settlementIndex + 1;
+        propsToUpdate.currentSettlementIndex = newSettlementIndex.toString();
+        if (newSettlementIndex >= settlements.length) {
+          propsToUpdate.totalSettlementsProcessed = (parseInt(props.totalSettlementsProcessed || '0') + settlements.length).toString();
+          propsToUpdate.currentRegionIndex = (regionIndex + 1).toString();
+        }
+      }
+      
+      SCRIPT_PROPERTIES.setProperties(propsToUpdate);
+      createContinuationTrigger_('mainProcessManager', 3000);
+      return;
+    }
 
     updateProgressMessage_(regions, regionIndex, settlementIndex, settlements, props);
 
@@ -313,37 +352,49 @@ function mainProcessManager() {
     const regionName = regions[regionIndex];
     
     const result = searchByOSM_(settlementName, regionName);
-    
-    let newCnt = 0, updCnt = 0, closedCnt = 0;
-    if (result && result.status === 'success' && result.data && result.data.length > 0) {
+    const allObjects = (result && result.status === 'success' && result.data) ? result.data : [];
+
+    if (allObjects.length > 0) {
+      const totalFound = allObjects.length;
+      const chunkToProcess = allObjects.splice(0, OBJECT_PROCESS_CHUNK_SIZE);
+      const remainingCount = allObjects.length;
+
+      addLogEntry_(`→ ${settlementName}: обработка первой порции (${chunkToProcess.length} из ${totalFound} шт.)...`, 'info');
+      
       const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
-      try {
-        const stats = smartUpdateSheet_(sheet, result.data, settlementName);
-        newCnt = stats.new; updCnt = stats.updated; closedCnt = stats.closed;
-        addLogEntry_(`→ ${settlementName}: +${newCnt} новых, ${updCnt} обновлено, ${closedCnt} закрыто`, 'success');
-      } catch (e) {
-        addLogEntry_(`ОШИБКА ЗАПИСИ в "${settlementName}": ${e.message}`, 'error');
+      const stats = smartUpdateSheet_(sheet, chunkToProcess, settlementName);
+      let { new: newCnt, updated: updCnt, closed: closedCnt } = stats;
+
+      addLogEntry_(`→ ${settlementName} (порция): +${newCnt} новых, ${updCnt} обновлено, ${closedCnt} закрыто`, 'success');
+
+      const propsToUpdate = {
+        'totalNew': (parseInt(props.totalNew || '0') + newCnt).toString(),
+        'totalUpdated': (parseInt(props.totalUpdated || '0') + updCnt).toString(),
+        'totalClosed': (parseInt(props.totalClosed || '0') + closedCnt).toString(),
+        'consecutiveErrors': '0'
+      };
+
+      if (remainingCount > 0) {
+        propsToUpdate.pendingObjectsForSettlement = JSON.stringify(allObjects);
+      } else {
+        const newSettlementIndex = settlementIndex + 1;
+        propsToUpdate.currentSettlementIndex = newSettlementIndex.toString();
+        if (newSettlementIndex >= settlements.length) {
+          propsToUpdate.totalSettlementsProcessed = (parseInt(props.totalSettlementsProcessed || '0') + settlements.length).toString();
+          propsToUpdate.currentRegionIndex = (regionIndex + 1).toString();
+        }
       }
+      SCRIPT_PROPERTIES.setProperties(propsToUpdate);
     } else {
       addLogEntry_(`→ ${settlementName}: ничего не найдено`, 'info');
+      const newSettlementIndex = settlementIndex + 1;
+      SCRIPT_PROPERTIES.setProperty('currentSettlementIndex', newSettlementIndex.toString());
+      if (newSettlementIndex >= settlements.length) {
+        const total = parseInt(props.totalSettlementsProcessed || '0') + settlements.length;
+        SCRIPT_PROPERTIES.setProperty('totalSettlementsProcessed', total.toString());
+        SCRIPT_PROPERTIES.setProperty('currentRegionIndex', (regionIndex + 1).toString());
+      }
     }
-
-    const totalNew = parseInt(props.totalNew || '0') + newCnt;
-    const totalUpd = parseInt(props.totalUpdated || '0') + updCnt;
-    const totalClosed = parseInt(props.totalClosed || '0') + closedCnt;
-    SCRIPT_PROPERTIES.setProperties({
-      'totalNew': totalNew.toString(),
-      'totalUpdated': totalUpd.toString(),
-      'totalClosed': totalClosed.toString()
-    });
-
-    SCRIPT_PROPERTIES.setProperty('currentSettlementIndex', (settlementIndex + 1).toString());
-    if (settlementIndex + 1 >= settlements.length) {
-      const total = parseInt(props.totalSettlementsProcessed || '0') + settlements.length;
-      SCRIPT_PROPERTIES.setProperty('totalSettlementsProcessed', total.toString());
-      SCRIPT_PROPERTIES.setProperty('currentRegionIndex', (regionIndex + 1).toString());
-    }
-    SCRIPT_PROPERTIES.setProperty('consecutiveErrors', '0');
     
     if (SCRIPT_PROPERTIES.getProperty(EMERGENCY_STOP_FLAG) === 'true') {
       SCRIPT_PROPERTIES.deleteProperty(EMERGENCY_STOP_FLAG); 
@@ -436,12 +487,10 @@ function searchByOSM_(settlementName, regionName) {
       const responseCode = response.getResponseCode();
       if (responseCode === 200) {
         const data = JSON.parse(response.getContentText());
-        let elements = data.elements;
+        const elements = data.elements;
 
-        const limit = 50;
-        if (elements.length > limit) {
-          addLogEntry_(`Найдено ${elements.length} объектов, обрабатываем первые ${limit} для стабильности.`, 'warning');
-          elements = elements.slice(0, limit);
+        if (elements.length > 0) {
+          addLogEntry_(`Найдено ${elements.length} объектов через OSM.`, 'info');
         }
 
         const formattedData = elements.map(el => {
