@@ -1,4 +1,3 @@
-
 // ===================================================================================
 // Code.gs – Серверная логика
 // Версия: 28.0 – Динамическое сопоставление колонок
@@ -633,7 +632,7 @@ function getSettlementsForRegion_(region) {
       area[name="${osmRegionName}"]["admin_level"~"2|4"];
     )->.searchArea;
     (
-      node["place"~"city|town"](area.searchArea);
+      nwr["place"~"city|town"](area.searchArea);
     );
     out body;
   `.trim();
@@ -707,26 +706,35 @@ function smartUpdateSheet_(sheet, newData, currentCity) {
     }
   }
 
-  const allData = sheet.getDataRange().getValues().slice(1);
+  let allData = [];
+  let allDataRange = null;
+
+  if (sheet.getLastRow() > 1) {
+    allDataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    allData = allDataRange.getValues();
+  }
 
   const existingCityData = allData.filter(row => row[colMap['Город']] === currentCity);
   const existingIds = new Set(existingCityData.map(row => row[colMap['ID OSM']]));
 
   const toAddRows = [];
-  const toUpdateRequests = [];
   const now = new Date();
+  let hasUpdates = false;
+  const updatedRowIndexes = new Set();
 
   newData.forEach(newItem => {
     if (existingIds.has(newItem.id)) {
       const rowIndex = allData.findIndex(row => row[colMap['ID OSM']] === newItem.id);
       if (rowIndex !== -1 && allData[rowIndex][colMap['Статус']] === 'marked_for_update') {
-        const rowNum = rowIndex + 2;
-        if (colMap['Наименование'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Наименование'])}${rowNum}`, values: [[newItem.name]] });
-        if (colMap['Категория'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Категория'])}${rowNum}`, values: [[newItem.category]] });
-        if (colMap['Адрес'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Адрес'])}${rowNum}`, values: [[newItem.address]] });
-        if (colMap['Контакты'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Контакты'])}${rowNum}`, values: [[newItem.phone || '']] });
-        if (colMap['Дата обновления'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Дата обновления'])}${rowNum}`, values: [[now]] });
-        if (colMap['Статус'] !== undefined) toUpdateRequests.push({ range: `${SHEET_NAME}!${String.fromCharCode(65 + colMap['Статус'])}${rowNum}`, values: [['active']] });
+        const rowToUpdate = allData[rowIndex];
+        if (colMap['Наименование'] !== undefined) rowToUpdate[colMap['Наименование']] = newItem.name;
+        if (colMap['Категория'] !== undefined) rowToUpdate[colMap['Категория']] = newItem.category;
+        if (colMap['Адрес'] !== undefined) rowToUpdate[colMap['Адрес']] = newItem.address;
+        if (colMap['Контакты'] !== undefined) rowToUpdate[colMap['Контакты']] = newItem.phone || '';
+        if (colMap['Дата обновления'] !== undefined) rowToUpdate[colMap['Дата обновления']] = now;
+        if (colMap['Статус'] !== undefined) rowToUpdate[colMap['Статус']] = 'active';
+        hasUpdates = true;
+        updatedRowIndexes.add(rowIndex);
       }
     } else {
       const newRow = new Array(headers.length).fill('');
@@ -748,12 +756,12 @@ function smartUpdateSheet_(sheet, newData, currentCity) {
     }
   });
 
+  if (hasUpdates && allDataRange) {
+    allDataRange.setValues(allData);
+  }
+
   if (toAddRows.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAddRows.length, headers.length).setValues(toAddRows);
-  }
-  
-  if (toUpdateRequests.length > 0) {
-    Sheets.Spreadsheets.Values.batchUpdate({ data: toUpdateRequests, valueInputOption: "USER_ENTERED" }, SHEET_ID);
   }
 
   const activeIdsInNewData = new Set(newData.map(item => item.id));
@@ -762,10 +770,8 @@ function smartUpdateSheet_(sheet, newData, currentCity) {
     !activeIdsInNewData.has(row[colMap['ID OSM']]) &&
     row[colMap['Статус']] !== 'closed'
   ).length;
-  
-  const updatedCount = new Set(toUpdateRequests.map(r => r.range.match(/\d+/)[0])).size;
 
-  return { new: toAddRows.length, updated: updatedCount, closed: closedCount };
+  return { new: toAddRows.length, updated: updatedRowIndexes.size, closed: closedCount };
 }
 
 function prepareForSmartUpdate_(sheet, type, region) {
@@ -780,6 +786,11 @@ function prepareForSmartUpdate_(sheet, type, region) {
   const statusColIndex = colMap['Статус'];
   const statusColLetter = String.fromCharCode(65 + statusColIndex);
 
+  if (sheet.getLastRow() < 2) {
+    addLogEntry_(`Нет активных записей OSM для проверки в "${region || 'базе'}".`, 'info');
+    return;
+  }
+
   const data = sheet.getDataRange().getValues().slice(1);
   const rangesToUpdate = [];
   data.forEach((row, index) => {
@@ -792,14 +803,14 @@ function prepareForSmartUpdate_(sheet, type, region) {
     else if (type === 'city' && isOsmSource && isActive && row[colMap['Город']] === region) shouldMark = true;
     
     if (shouldMark) {
-      rangesToUpdate.push(`${SHEET_NAME}!${statusColLetter}${index + 2}`);
+      rangesToUpdate.push(`${statusColLetter}${index + 2}`);
     }
   });
 
   if (rangesToUpdate.length > 0) {
-    const requests = rangesToUpdate.map(range => ({ range, values: [['marked_for_update']] }));
-    for (let i = 0; i < requests.length; i += 500) {
-      Sheets.Spreadsheets.Values.batchUpdate({ data: requests.slice(i, i + 500), valueInputOption: "RAW" }, SHEET_ID);
+    for (let i = 0; i < rangesToUpdate.length; i += 500) {
+      const chunk = rangesToUpdate.slice(i, i + 500);
+      sheet.getRangeList(chunk).setValue('marked_for_update');
     }
     addLogEntry_(`Помечено ${rangesToUpdate.length} записей для проверки.`, 'info');
   } else {
@@ -810,6 +821,10 @@ function prepareForSmartUpdate_(sheet, type, region) {
 function finalizeSmartUpdate_() {
   addLogEntry_('Завершение "умного" обновления: закрытие устаревших записей...', 'info');
   const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+  if (sheet.getLastRow() < 2) {
+    addLogEntry_('Не найдено устаревших записей для закрытия.', 'info');
+    return;
+  }
   const data = sheet.getDataRange().getValues();
   const headers = data.shift();
   const statusColIndex = headers.indexOf('Статус');
@@ -822,14 +837,14 @@ function finalizeSmartUpdate_() {
   const rangesToUpdate = [];
   data.forEach((row, index) => {
     if (row[statusColIndex] === 'marked_for_update') {
-      rangesToUpdate.push(`${SHEET_NAME}!${statusColLetter}${index + 2}`);
+      rangesToUpdate.push(`${statusColLetter}${index + 2}`);
     }
   });
 
   if (rangesToUpdate.length > 0) {
-    const requests = rangesToUpdate.map(range => ({ range, values: [['closed']] }));
-    for (let i = 0; i < requests.length; i += 500) {
-      Sheets.Spreadsheets.Values.batchUpdate({ data: requests.slice(i, i + 500), valueInputOption: "RAW" }, SHEET_ID);
+    for (let i = 0; i < rangesToUpdate.length; i += 500) {
+      const chunk = rangesToUpdate.slice(i, i + 500);
+      sheet.getRangeList(chunk).setValue('closed');
     }
     addLogEntry_(`${rangesToUpdate.length} устаревших записей было закрыто.`, 'success');
   } else {
